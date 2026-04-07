@@ -2,6 +2,7 @@ import AppKit
 import AVFoundation
 import Combine
 
+@MainActor
 final class PlayerEngine: ObservableObject {
     @Published var isPlaying = false
     @Published var currentTrack: Track?

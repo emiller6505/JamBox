@@ -35,3 +35,5 @@ targets:
         embed: false
       - framework: SwiftUI.framework
         embed: false
+      - framework: MediaPlayer.framework
+        embed: false

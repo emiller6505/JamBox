@@ -2,6 +2,7 @@ import SwiftUI
 
 struct NowPlayingBar: View {
     @ObservedObject var player: PlayerEngine
+    @EnvironmentObject private var themeManager: ThemeManager
     @Binding var showArtwork: Bool
 
     // Scrub state: decouples the slider from live playback during a drag
@@ -69,7 +70,7 @@ struct NowPlayingBar: View {
             Text(formatTime(displayedPosition))
                 .font(.caption)
                 .monospacedDigit()
-                .foregroundStyle(.secondary)
+                .foregroundStyle(themeManager.current.secondaryText ?? Color.secondary)
                 .frame(width: 50, alignment: .trailing)
 
             Slider(
@@ -89,7 +90,7 @@ struct NowPlayingBar: View {
             Text(formatTime(player.playbackDuration))
                 .font(.caption)
                 .monospacedDigit()
-                .foregroundStyle(.secondary)
+                .foregroundStyle(themeManager.current.secondaryText ?? Color.secondary)
                 .frame(width: 50, alignment: .leading)
         }
     }
