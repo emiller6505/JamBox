@@ -77,6 +77,13 @@ The grouping is **stable across the existing track ordering** (which is folder-o
 
 `PlayerEngine` already implements the resolution chain for the now-playing bar artwork: embedded metadata → folder images named `cover.*` / `folder.*` / `album.*` / `front.*` → any image in the folder. It maintains a per-folder cache. **Reuse it.** If the cache API isn't currently exposed, expose it via a small accessor — but do not duplicate the resolution logic.
 
+**IMPORTANT CONSTRAINT (added 2026-04-06 after card 0005 closed):** the per-folder artwork cache is now bounded to **8 entries with LRU eviction**, and every cached image is downscaled to ≤1024 px on its longest side before storage (see commit `183872f`, card 0005). This was the fix for a 500 MB memory sawtooth.
+
+For card 0004, this means:
+- If the user's library spans more than 8 distinct visible album groups in the table at one time, the LRU cap will thrash — every scroll across album boundaries will evict and re-decode artwork. Expect this and **plan for it during plan mode**. Either: (a) accept the thrash (the re-decode is fast and the cap exists for memory reasons that 0004 should not break), (b) propose raising the cap to a higher value with a justification (e.g. cap to N where N is roughly the number of albums likely to be visible at once — maybe 20-32 — but ONLY if you can show the memory cost is acceptable), or (c) introduce a separate, smaller "thumbnail-resolution" cache layer specifically for table-row art that holds many more entries at much lower per-entry cost (e.g. 64 px square), separate from the main full-resolution cache used by the now-playing bar.
+- Option (c) is probably the right call for 0004: the table's leftmost-column thumbnails don't need 1024 px artwork, so a parallel thumbnail cache (say 128 entries × ~30 KB each = ~4 MB) is both more memory-efficient AND avoids thrashing the main cache.
+- Whichever option the engineer picks, **the now-playing bar artwork must continue to work without regression** — the main full-resolution cache and its bound must not be compromised.
+
 Artwork loading is async. The initial fast scan (`FileScanner.scanFolder`) shows track filenames immediately; metadata enrichment follows in the background. Album art comes via the metadata pass and the folder-image scan. **The Table must render immediately and show the placeholder for groups whose art has not yet loaded**, then update when art arrives — don't block any UI on art.
 
 ### Speaker indicator coexistence
