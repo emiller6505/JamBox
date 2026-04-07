@@ -7,6 +7,7 @@ struct ContentView: View {
 
     @State private var selection: Track.ID?
     @State private var showArtwork = false
+    @State private var scrollTargetRow: Int?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -32,37 +33,49 @@ struct ContentView: View {
                 } else {
                     Table(player.tracks, selection: $selection) {
                         TableColumn("") { (track: Track) in
-                            if track.id == player.currentTrack?.id {
-                                Image(systemName: "speaker.wave.2.fill")
-                                    .foregroundStyle(Color.accentColor)
+                            cell {
+                                if track.id == player.currentTrack?.id {
+                                    Image(systemName: "speaker.wave.2.fill")
+                                        .foregroundStyle(themeManager.current.accent)
+                                }
                             }
                         }
                         .width(20)
 
                         TableColumn("#") { (track: Track) in
-                            Text(track.trackNumberString)
-                                .monospacedDigit()
+                            cell {
+                                Text(track.trackNumberString)
+                                    .monospacedDigit()
+                            }
                         }
                         .width(min: 30, ideal: 35, max: 50)
 
                         TableColumn("Title") { (track: Track) in
-                            Text(track.displayName)
+                            cell {
+                                Text(track.displayName)
+                            }
                         }
                         .width(min: 100, ideal: 250)
 
                         TableColumn("Artist") { (track: Track) in
-                            Text(track.artist)
+                            cell {
+                                Text(track.artist)
+                            }
                         }
                         .width(min: 80, ideal: 180)
 
                         TableColumn("Album") { (track: Track) in
-                            Text(track.album)
+                            cell {
+                                Text(track.album)
+                            }
                         }
                         .width(min: 80, ideal: 180)
 
                         TableColumn("Duration") { (track: Track) in
-                            Text(track.durationString)
-                                .monospacedDigit()
+                            cell {
+                                Text(track.durationString)
+                                    .monospacedDigit()
+                            }
                         }
                         .width(min: 50, ideal: 60, max: 80)
                     }
@@ -70,7 +83,27 @@ struct ContentView: View {
                         guard row < player.tracks.count else { return }
                         player.play(startingAt: row)
                     }
+                    .contextMenu(forSelectionType: Track.ID.self) { ids in
+                        // v1: operate on a single row (the right-clicked row).
+                        // AppKit's NSTableView selects the right-clicked row
+                        // before the menu fires if it wasn't already selected,
+                        // so `ids` reflects that. If multiple rows are selected
+                        // we intentionally act on the first one.
+                        if let id = ids.first,
+                           let index = player.tracks.firstIndex(where: { $0.id == id }) {
+                            let track = player.tracks[index]
+                            Button("Play") {
+                                player.play(startingAt: index)
+                            }
+                            Button("Show in Finder") {
+                                NSWorkspace.shared.activateFileViewerSelecting([track.url])
+                            }
+                        }
+                    }
                     .scrollContentBackground(.hidden)
+                    .alternatingRowBackgrounds(themeManager.current.alternatingRowBackgrounds)
+                    .tint(themeManager.current.tableTintOverride ?? themeManager.current.accent)
+                    .onTableScroll(rowIndex: $scrollTargetRow)
                 }
 
                 // Album art overlay
@@ -98,7 +131,12 @@ struct ContentView: View {
 
             Divider()
 
-            NowPlayingBar(player: player, showArtwork: $showArtwork)
+            NowPlayingBar(player: player, showArtwork: $showArtwork) { track in
+                selection = track.id
+                if let row = player.tracks.firstIndex(where: { $0.id == track.id }) {
+                    scrollTargetRow = row
+                }
+            }
         }
         .toolbar {
             ToolbarItem {
@@ -107,10 +145,18 @@ struct ContentView: View {
                 }
             }
         }
+        .toolbarBackground(
+            themeManager.current.transparentTitleBar ? .hidden : .automatic,
+            for: .windowToolbar
+        )
         .frame(minWidth: 500, minHeight: 300)
-        .background { themeManager.current.backgroundView }
+        .background {
+            themeManager.current.backgroundView
+                .ignoresSafeArea()
+        }
         .tint(themeManager.current.accent)
         .preferredColorScheme(themeManager.current.colorScheme)
+        .windowChrome(for: themeManager.current)
         .onChange(of: player.currentArtwork == nil) { _, isNil in
             if isNil { showArtwork = false }
         }
@@ -132,5 +178,14 @@ struct ContentView: View {
             player.play(startingAt: index)
             return .handled
         }
+    }
+
+    /// Applies the theme's primary text color to a cell's content. Used for
+    /// every Table cell — `foregroundStyle` doesn't reliably propagate from
+    /// the Table view down to cell content, so we apply it per-cell.
+    @ViewBuilder
+    private func cell<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        content()
+            .foregroundStyle(themeManager.current.primaryText)
     }
 }
