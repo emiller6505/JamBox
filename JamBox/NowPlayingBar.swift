@@ -5,94 +5,152 @@ struct NowPlayingBar: View {
     @EnvironmentObject private var themeManager: ThemeManager
     @Binding var showArtwork: Bool
 
+    /// Called when the user clicks the song title in the bar.
+    /// ContentView uses this to scroll the table to that track and highlight it.
+    var onTitleClick: ((Track) -> Void)? = nil
+
     // Scrub state: decouples the slider from live playback during a drag
     // so the user's finger controls the position, not the periodic observer.
     @State private var isScrubbing = false
     @State private var scrubFraction: Double = 0
 
     var body: some View {
-        VStack(spacing: 4) {
-            transportRow
+        VStack(spacing: 8) {
+            // Row 1: artwork, metadata, transport controls
+            HStack(spacing: 12) {
+                artworkCell
+                metadataCell
+                transportCell
+            }
+
+            // Row 2: scrub bar — timestamps sit naturally adjacent to the slider
+            // so there's no dead space between the slider end and the timestamp.
+            // Both rows still align at the leading edge (artwork left == left
+            // timestamp left) and the trailing edge (transport right == right
+            // timestamp right) because each row is padded by the same amount.
             if player.currentTrack != nil {
-                scrubRow
+                HStack(spacing: 6) {
+                    leftTimestampCell
+                    sliderCell
+                    rightTimestampCell
+                }
             }
         }
         .padding()
+        .background(themeManager.current.chromeBackground)
     }
 
-    // MARK: - Transport Row
+    // MARK: - Top row cells
 
-    private var transportRow: some View {
-        HStack {
-            if let artwork = player.currentArtwork {
-                Image(nsImage: artwork)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 40, height: 40)
-                    .cornerRadius(4)
-                    .overlay(PointerCursorView())
-                    .onTapGesture { showArtwork = true }
-            }
-
-            VStack(alignment: .leading) {
-                Text(player.currentTrack?.displayName ?? "Nothing playing")
-                    .font(.headline)
-                    .lineLimit(1)
-            }
-
-            Spacer()
-
-            HStack(spacing: 8) {
-                Button(action: { player.skipBackward() }) {
-                    Image(systemName: "backward.fill")
-                        .font(.title2)
-                }
-
-                Button(action: { player.togglePlayPause() }) {
-                    Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.title2)
-                }
-
-                Button(action: { player.skipForward() }) {
-                    Image(systemName: "forward.fill")
-                        .font(.title2)
-                }
-            }
-            .buttonStyle(.plain)
+    @ViewBuilder
+    private var artworkCell: some View {
+        if let artwork = player.currentArtwork {
+            Image(nsImage: artwork)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 60, height: 60)
+                .cornerRadius(4)
+                .overlay(PointerCursorView())
+                .onTapGesture { showArtwork = true }
+        } else {
+            // Placeholder so the column has a consistent width even with no track.
+            Color.clear.frame(width: 60, height: 60)
         }
     }
 
-    // MARK: - Scrub Row
-
-    private var scrubRow: some View {
-        HStack(spacing: 6) {
-            // Left label: running position (truncated — shows the current whole second)
-            Text(formatTime(displayedPosition))
-                .font(.caption)
-                .monospacedDigit()
-                .foregroundStyle(themeManager.current.secondaryText ?? Color.secondary)
-                .frame(width: 50, alignment: .trailing)
-
-            Slider(
-                value: scrubBinding,
-                in: 0...1
-            ) { editing in
-                if editing {
-                    isScrubbing = true
-                    scrubFraction = liveFraction
-                } else {
-                    guard isScrubbing else { return } // guard against duplicate onEditingChanged
-                    player.seek(to: scrubFraction)
-                    isScrubbing = false
+    @ViewBuilder
+    private var metadataCell: some View {
+        if let track = player.currentTrack {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Image(systemName: "music.note")
+                        .frame(width: 14)
+                    Text(track.displayName)
+                        .font(.headline)
+                        .lineLimit(1)
+                        .overlay(PointerCursorView())
+                        .onTapGesture { onTitleClick?(track) }
+                }
+                if !track.artist.isEmpty {
+                    HStack(spacing: 6) {
+                        Image(systemName: "person.fill")
+                            .frame(width: 14)
+                        Text(track.artist)
+                            .lineLimit(1)
+                    }
+                    .font(.subheadline)
+                }
+                if !track.album.isEmpty {
+                    HStack(spacing: 6) {
+                        Image(systemName: "opticaldisc.fill")
+                            .frame(width: 14)
+                        Text(track.album)
+                            .lineLimit(1)
+                    }
+                    .font(.subheadline)
                 }
             }
-
-            Text(formatTime(player.playbackDuration))
-                .font(.caption)
-                .monospacedDigit()
-                .foregroundStyle(themeManager.current.secondaryText ?? Color.secondary)
-                .frame(width: 50, alignment: .leading)
+            .foregroundStyle(themeManager.current.primaryText)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            Text("Nothing playing")
+                .font(.headline)
+                .foregroundStyle(themeManager.current.primaryText)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    private var transportCell: some View {
+        HStack(spacing: 8) {
+            Button(action: { player.skipBackward() }) {
+                Image(systemName: "backward.fill")
+                    .font(.title2)
+            }
+
+            Button(action: { player.togglePlayPause() }) {
+                Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
+                    .font(.title2)
+            }
+
+            Button(action: { player.skipForward() }) {
+                Image(systemName: "forward.fill")
+                    .font(.title2)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Bottom row (scrub) cells
+
+    private var leftTimestampCell: some View {
+        Text(formatTime(displayedPosition))
+            .font(.caption)
+            .monospacedDigit()
+            .foregroundStyle(themeManager.current.secondaryText ?? Color.secondary)
+    }
+
+    private var sliderCell: some View {
+        Slider(
+            value: scrubBinding,
+            in: 0...1
+        ) { editing in
+            if editing {
+                isScrubbing = true
+                scrubFraction = liveFraction
+            } else {
+                guard isScrubbing else { return } // guard against duplicate onEditingChanged
+                player.seek(to: scrubFraction)
+                isScrubbing = false
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var rightTimestampCell: some View {
+        Text(formatTime(player.playbackDuration))
+            .font(.caption)
+            .monospacedDigit()
+            .foregroundStyle(themeManager.current.secondaryText ?? Color.secondary)
     }
 
     // MARK: - Scrub State Helpers

@@ -52,7 +52,7 @@ enum Theme: String, CaseIterable, Identifiable {
         switch self {
         case .light: return .accentColor
         case .dark: return Color(red: 0.0, green: 0.478, blue: 0.8)       // VSCode blue #007ACC
-        case .candy: return Color(red: 1.0, green: 0.42, blue: 0.21)      // bright orange #FF6B35
+        case .candy: return Color(red: 1.0, green: 0.89, blue: 0.30)      // lemon yellow #FFE34D
         }
     }
 
@@ -61,8 +61,48 @@ enum Theme: String, CaseIterable, Identifiable {
     var secondaryText: Color? {
         switch self {
         case .light, .dark: return nil
-        case .candy: return Color(red: 1.0, green: 0.88, blue: 0.51)      // candy yellow #FFE082
+        case .candy: return Color.white.opacity(0.7)
         }
+    }
+
+    /// Primary text color for track titles, artist, etc.
+    /// Candy uses pure white for max contrast against the gradient.
+    var primaryText: Color {
+        switch self {
+        case .light, .dark: return .primary
+        case .candy: return .white
+        }
+    }
+
+    /// Override tint applied to the Table specifically, used to recolor the
+    /// system row selection highlight without affecting other accents (scrub
+    /// bar, play indicator, etc.). `nil` means inherit the parent tint.
+    var tableTintOverride: Color? {
+        switch self {
+        case .light, .dark: return nil
+        case .candy: return .white
+        }
+    }
+
+    /// Whether the Table should draw alternating row backgrounds. Disabled for
+    /// candy so the gradient background shows through cleanly.
+    var alternatingRowBackgrounds: AlternatingRowBackgroundBehavior {
+        self == .candy ? .disabled : .enabled
+    }
+
+    /// Background for chrome strips (now playing bar). Returns AnyShapeStyle so
+    /// themes can use a Color, Material, gradient, etc.
+    var chromeBackground: AnyShapeStyle {
+        switch self {
+        case .light, .dark: return AnyShapeStyle(Color.clear)
+        case .candy: return AnyShapeStyle(Color.white.opacity(0.12))
+        }
+    }
+
+    /// Whether the window's titlebar should be transparent so the background
+    /// view shows through to the top edge.
+    var transparentTitleBar: Bool {
+        self == .candy
     }
 }
 
