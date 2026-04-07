@@ -3,7 +3,7 @@ id: 0008
 title: Add search filter input to filter visible tracks by title/artist/album
 created: 2026-04-07
 engineer: engineer-04
-qa: null
+qa: qa-04
 parent: null
 priority: P2
 estimate: S
@@ -144,6 +144,7 @@ The speaker indicator column already renders per-row based on `track.id == playe
 - 2026-04-07 — manager created card from user request
 - 2026-04-07 — engineer-04 picked up; plan written; ready for implementation
 - 2026-04-07 — engineer-04 implemented in ContentView.swift; build green; self-audit complete; ready for QA
+- 2026-04-07 — qa-04 audited; build green independently; all acceptance bullets PASS; recommendation APPROVE
 
 ## Self-Audit
 
@@ -191,15 +192,49 @@ The speaker indicator column already renders per-row based on `track.id == playe
 7. **Scope check:** No unrelated changes. The diff is exclusively the search field, the filtering computed property, the Table's source array swap, and the double-click index translation. No drive-by refactors, no theme changes, no PlayerEngine touches.
 
 ## QA Report
-*Filled in by the QA agent. See .pm/README.md §6b.*
 
 ### Acceptance
+- [PASS] Magnifying-glass + text input top-right, rounded, unobtrusive — `ContentView.swift:33-49`. HStack with `Spacer()` then `magnifyingglass` SF Symbol then `TextField` with `.roundedBorder` style, width 200, padded, hidden when `player.tracks.isEmpty`.
+- [PASS] Real-time filter, no Enter key — `filteredTracks` is a computed property recomputed on every body re-eval; the `TextField`'s two-way binding to `searchQuery` triggers a body recompute on each keystroke (`ContentView.swift:19-27, 38`).
+- [PASS] Case-insensitive substring across title/artist/album with OR semantics — `ContentView.swift:20-26`. Lowercases query once and each field per-comparison; uses `||`.
+- [PASS] Empty/whitespace query is no-op — `ContentView.swift:20-21`. `trimmingCharacters(in: .whitespaces)` then `guard !q.isEmpty else { return player.tracks }`.
+- [PASS] Missing metadata doesn't crash or spuriously match — verified `Track.artist`/`Track.album`/`Track.displayName` are non-optional `String` (`Track.swift:7-9`); empty string when missing. `"".contains(q)` is `false` for non-empty `q`. No nil access.
+- [PASS] Filter is display-only; queue not mutated — Table is fed `filteredTracks` (`ContentView.swift:80`); `player.tracks` is never written from filter code. `PlayerEngine` untouched.
+- [PASS] Currently-playing track keeps playing when filtered out — same as above; no mutation of `player.tracks`/`AVQueuePlayer`.
+- [PASS] Double-click on filtered row plays correct track — `ContentView.swift:128-138`. `clickedRow` from NSTableView is the visible-row index; code looks up `filteredTracks[row].id` then `player.tracks.firstIndex(where:)` to translate before calling `player.play(startingAt:)`. Verified `TableDoubleClick.swift:75-79` does pass `clickedRow` (a visual row index, which under SwiftUI's Table maps to the array passed in, i.e. `filteredTracks`).
+- [PASS] Right-click context menu still works on filtered rows — `ContentView.swift:139-155`. Unchanged; already operates on `Track.ID` from selection and does its own `firstIndex(where:)` lookup against `player.tracks`, so it is filter-agnostic.
+- [N/A] Album-art overlay (card 0004) — not in main; correctly noted in plan.
+- [PASS] Speaker indicator on filtered view — `ContentView.swift:83-86`. Per-row compare `track.id == player.currentTrack?.id`; works for any subset.
+- [PASS] Clearing field restores full view, no flicker — empty query returns `player.tracks` (the same backing array, same `Track.ID` identities), so SwiftUI's Table diff reuses rows.
+- [PASS] Cmd-F focuses field — `ContentView.swift:54-58`. Hidden zero-sized `Button` with `.keyboardShortcut("f", modifiers: .command)` sets `searchFieldFocused = true`. `.accessibilityHidden(true)` keeps it out of VoiceOver.
+- [PASS] Esc clears + unfocuses — `ContentView.swift:42-45`. `.onExitCommand` on the TextField clears the query and drops focus while the field has key focus. The parent's `.onKeyPress(.escape)` (artwork dismiss) is unchanged at `ContentView.swift:220-226`; when search has focus, the TextField swallows Esc, otherwise the parent handler runs.
+- [PASS] Build clean, no new warnings — independently ran `xcodebuild -project JamBox.xcodeproj -scheme JamBox build` → `** BUILD SUCCEEDED **`. No warnings.
+- [PASS] Gapless playback unchanged — no edits to `PlayerEngine`, queue, or `enqueueMoreIfNeeded`. Verified diff is confined to `ContentView.swift`.
+- [PASS] AVURLAsset invariant unaffected — no audio code touched.
+- [PASS] Two-phase loading invariant unaffected — pre-metadata tracks have `displayName` set to filename in `Track.init(url:)` (`Track.swift:29`), so search before metadata loads matches against filename. Empty `artist`/`album` strings produce no false positives.
 
 ### Invariants
+- [N/A] §7.1 AVURLAsset — no audio code touched.
+- [PASS] §7.2 Gapless playback — `PlayerEngine` and queue management untouched; only `ContentView.swift` changed.
+- [PASS] §7.3 Two-phase loading — search uses currently-loaded metadata; pre-metadata tracks searchable by filename via `displayName`.
+- [PASS] §7.4 Sandbox bookmarks — no bookmark code touched.
+- [PASS] §7.5 Xcodegen — no source files added/removed; `project.yml` unchanged; no regen needed.
+- [PASS] §7.6 Build green — `** BUILD SUCCEEDED **` confirmed independently.
 
 ### Findings
+- [NIT] `searchQuery` is not cleared when the user changes folders, so a stale filter could surprise the user with a new library. Engineer flagged this in self-audit step 5; out of scope for this card. Worth a tiny follow-up card.
+- [NIT] On the candy theme, the magnifying-glass icon uses `.foregroundStyle(.secondary)`, which may render with low contrast against the vibrant gradient. The `TextField`'s `.roundedBorder` chrome inherits the dark color scheme and should be functional. Card explicitly says "do NOT introduce new theme machinery"; ship as-is and revisit only if the user complains.
+- [NIT] Plan §"Esc-to-clear" claims "artwork wins" if both states are active, but the implementation uses `.onExitCommand` on the TextField which actually consumes Esc before the parent handler — so search wins when focused. This is the more sensible behavior; only the plan note is mildly stale. No code change required.
+- [NIT] Hidden Cmd-F `Button("")` lives outside the `if !player.tracks.isEmpty` guard, so the shortcut is registered even on the empty state. Pressing Cmd-F when no tracks are loaded sets `searchFieldFocused = true` against a TextField that isn't in the hierarchy — harmless no-op. Fine.
 
 ### Recommendation
+- APPROVE
+
+### QA Build Result
+`xcodebuild -project JamBox.xcodeproj -scheme JamBox build` → `** BUILD SUCCEEDED **` (no warnings).
 
 ## Manager Decision
 *Filled in by the manager when closing or kicking back.*
+
+## Manager Decision
+2026-04-07 — APPROVE. QA-04 walked all 18 acceptance bullets (PASS) and applicable §7 invariants. Independent build green. Index translation from filtered view → `player.tracks` verified correct, reusing the Track.ID lookup pattern from card 0001. Cmd-F / Esc keyboard handling works as specified. Only NIT-level findings, none blocking, none warranting child cards. Closing to done/.
