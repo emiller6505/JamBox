@@ -47,6 +47,13 @@ The user answered the manager's three clarifying questions:
 2. **Memory shape:** **SAWTOOTH.** Memory grows from about 500 MB to about 1 GB, then jumps back down to 500 MB, repeating over and over throughout playback.
 3. **Library size:** about 1000 tracks at most, likely fewer.
 
+**Additional detail (followup):** the user clarified that the sawtooth does NOT start immediately on launch — "it starts off low and then after a while it starts doing the pattern." So the timeline is:
+- App launches, scan + enrichment runs, memory rises and settles at the post-enrichment baseline (~500 MB).
+- Playback starts. No churn yet.
+- A while later (seconds to a few minutes), the sawtooth begins and is self-sustaining from then on.
+
+This delay-then-start pattern is consistent with the FolderWatcher hypothesis below: macOS batches filesystem-touch events from AVFoundation's reads and only flushes them to FSEvents subscribers after some latency. The first flush triggers cycle 1; every subsequent file touch (or track advance) re-triggers the cycle.
+
 ### THE SAWTOOTH IS THE LOAD-BEARING CLUE
 
 A 500 MB sawtooth oscillation happening repeatedly during idle playback is **not a leak** (leaks are monotonic) and **not steady-state** (steady-state is flat). It is **churn**: something is allocating ~500 MB worth of objects on a recurring cycle, those objects become unreachable, ARC sweeps them, the cycle repeats. The very rough math: 1000 tracks × ~500 KB per track = 500 MB. That number falls out naturally if we are reallocating per-track artwork or metadata structures on a cycle.
