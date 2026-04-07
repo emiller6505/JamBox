@@ -8,9 +8,55 @@ struct ContentView: View {
     @State private var selection: Track.ID?
     @State private var showArtwork = false
     @State private var scrollTargetRow: Int?
+    @State private var searchQuery: String = ""
+    @FocusState private var searchFieldFocused: Bool
+
+    /// Tracks visible after applying the search query. Filter is a
+    /// case-insensitive substring match across title (displayName),
+    /// artist, and album. Empty / whitespace query is a no-op.
+    /// Important: this is for *display only*. `player.tracks` and the
+    /// playback queue are never mutated by search.
+    private var filteredTracks: [Track] {
+        let q = searchQuery.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !q.isEmpty else { return player.tracks }
+        return player.tracks.filter { track in
+            track.displayName.lowercased().contains(q)
+                || track.artist.lowercased().contains(q)
+                || track.album.lowercased().contains(q)
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
+            // Top chrome: search field pinned to the right. Hidden when
+            // there are no tracks so it doesn't float over the empty state.
+            if !player.tracks.isEmpty {
+                HStack(spacing: 6) {
+                    Spacer()
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.secondary)
+                    TextField("Search", text: $searchQuery)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 200)
+                        .focused($searchFieldFocused)
+                        .onExitCommand {
+                            searchQuery = ""
+                            searchFieldFocused = false
+                        }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+            }
+
+            // Hidden Cmd-F shortcut to focus the search field. Placed as a
+            // zero-size button so its keyboardShortcut is registered window-wide
+            // without affecting layout.
+            Button("") { searchFieldFocused = true }
+                .keyboardShortcut("f", modifiers: .command)
+                .frame(width: 0, height: 0)
+                .opacity(0)
+                .accessibilityHidden(true)
+
             ZStack {
                 // Track list (or empty/loading state)
                 if player.tracks.isEmpty && !appModel.isLoading {
@@ -31,7 +77,7 @@ struct ContentView: View {
                         Spacer()
                     }
                 } else {
-                    Table(player.tracks, selection: $selection) {
+                    Table(filteredTracks, selection: $selection) {
                         TableColumn("") { (track: Track) in
                             cell {
                                 if track.id == player.currentTrack?.id {
@@ -80,8 +126,15 @@ struct ContentView: View {
                         .width(min: 50, ideal: 60, max: 80)
                     }
                     .onTableDoubleClick { row in
-                        guard row < player.tracks.count else { return }
-                        player.play(startingAt: row)
+                        // `row` is an index into the filtered view. Translate
+                        // it back to an index into `player.tracks` so the
+                        // playback queue (which mirrors `player.tracks`) starts
+                        // at the right position.
+                        let visible = filteredTracks
+                        guard row < visible.count else { return }
+                        let id = visible[row].id
+                        guard let trueIndex = player.tracks.firstIndex(where: { $0.id == id }) else { return }
+                        player.play(startingAt: trueIndex)
                     }
                     .contextMenu(forSelectionType: Track.ID.self) { ids in
                         // v1: operate on a single row (the right-clicked row).
