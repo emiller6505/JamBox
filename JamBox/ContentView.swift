@@ -214,6 +214,10 @@ struct ContentView: View {
             if isNil { showArtwork = false }
         }
         .onKeyPress(.space) {
+            // Don't hijack spacebar while the user is typing in the search
+            // field — they're trying to type a literal space, not toggle
+            // playback.
+            if searchFieldFocused { return .ignored }
             player.togglePlayPause()
             return .handled
         }
