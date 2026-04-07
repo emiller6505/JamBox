@@ -246,6 +246,7 @@ Additional self-audit items:
 ## Log
 - 2026-04-07 — manager created card; flagged needs_design: true; promoted to ready/
 - 2026-04-07 — designer-01 picked up card (designer + engineer in one pass per §4b, card IS the design artifact); wrote ## Design with full spec, copy, palette, guardrails; produced gh-pages-staging/{index.html, style.css, phonograph.png}; total weight 84,852 bytes; no git operations performed (manager handles orphan branch). Requested lane moves: ready/0010 → design/0010 → qa/0010.
+- 2026-04-07 — qa-05 audited card. Read all three staged artifacts top-to-bottom; walked all 14 acceptance bullets and all 8 design subsections against the implementation; verified total weight 84,852 bytes (under 500KB); verified `cmp` byte-identity of phonograph.png against docs/phonograph.png; verified hex codes against Theme.swift:40-55; verified zero external requests via grep; verified §7.6 build green via xcodebuild (** BUILD SUCCEEDED **). All acceptance bullets PASS, all design subsections PASS, no BLOCKER/MAJOR/MINOR findings — three NITs (tagline margin shorthand, self-audit opacity drift, no prefers-color-scheme by design). Recommendation: APPROVE. Card stays in qa/ for manager to close.
 
 ## Self-Audit
 *Filled in by the engineer (or designer-as-engineer) before handing off to QA. See .pm/README.md §6.*
@@ -253,13 +254,62 @@ Additional self-audit items:
 ## QA Report
 *Filled in by the QA agent. See .pm/README.md §6b.*
 
+QA: qa-05. Audit performed against the §6b checklist adapted for a designer-led card with a `## Design` section. All three artifacts read top-to-bottom; design spec walked subsection-by-subsection against the implementation; technical claims independently verified.
+
 ### Acceptance
+
+- [PASS] Single static HTML page with hero featuring phonograph prominently — `gh-pages-staging/index.html:13-23` defines `<section class="hero">` with `<img class="logo" ... width="240" height="240">` above wordmark/tagline/button.
+- [PASS] Visually flashy but not gaudy; candy palette as reference — `style.css:42-46` uses dark violet base with two corner radial gradient washes; gradient appears only in wordmark fill (`style.css:83`), download button fill (`style.css:109`), and hero corner accents. Stage stays violet; gradient is accent, not flood.
+- [PASS] Responsive 375px → 1920px, no horizontal scroll — `box-sizing: border-box` globally (`style.css:6-10`), `clamp()` typography on wordmark/tagline/section title, `max-width: 60vw` cap on logo (`style.css:68-69`), `auto-fit minmax(260px, 1fr)` grid (`style.css:182`), and a `@media (max-width: 600px)` breakpoint (`style.css:247`). No fixed widths anywhere.
+- [PASS] No JavaScript, no build step, no external font CDNs — zero `<script>` tags in `index.html`; system font stack only at `style.css:19`; only external URLs are the two intentional GitHub anchors (verified via grep — see Findings note).
+- [PASS] Hero has logo + name + tagline + Download button → releases/latest — `index.html:15` (logo), `:16` (wordmark), `:17` (tagline), `:18` button href = `https://github.com/emiller6505/JamBox/releases/latest` exactly.
+- [PASS] Feature section with 4–6 distinguishing features — six `<li>` cards at `index.html:29-52`: gapless, local files, formats, album art, themes, search. Copy lifted and tightened.
+- [PASS] Footer with repo link and macOS 14+ note — `index.html:58-64` has `<footer>` with anchor to `https://github.com/emiller6505/JamBox` and literal `macOS 14+`.
+- [PASS] All copy final and shippable — every string in HTML matches the Copy table in `## Design` verbatim (title, meta description, wordmark, tagline, button label/sub-label, section title, all six feature titles/bodies, footer). Spot-checked all 13 strings.
+- [PASS] Total page < 500KB; CSS < 10KB; phonograph 50–100KB — `wc -c` reports HTML 2,408; CSS 5,542; PNG 76,902; total **84,852 bytes** (~83KB), well under 500KB. CSS is 5.4KB, well under 10KB.
+- [PASS] No tracking, no analytics, no third-party JS, no fonts.google.com — grep for `http|cdn|googleapis|fonts.google` across both files returns only the two intentional GitHub anchors at `index.html:18` and `index.html:60`. Zero remote asset requests.
+- [PASS] Files staged in `gh-pages-staging/`, manager handles orphan branch — all three files at `gh-pages-staging/`; no git operations performed by designer (verified via log).
+- [PASS] Phonograph copied (not symlinked) from `docs/phonograph.png` — `cmp gh-pages-staging/phonograph.png docs/phonograph.png` reports byte-identical; both files are 76,902 bytes; staged file is a regular file, not a symlink.
+- [PASS] Valid HTML5, no console warnings — `<!DOCTYPE html>` at line 1, `<html lang="en">` at line 2, `<meta charset="UTF-8">` at line 4, viewport meta at line 5, `<title>` at line 6, `<meta name="description">` at line 7, favicon link at line 8, stylesheet link at line 9. Semantic `<main>`/`<section>`/`<footer>`, h1→h2→h3 hierarchy with no skips, all tags closed, all attributes quoted, image has explicit width/height (no CLS), no inline event handlers, no deprecated tags.
+- [PASS] Feels like the same designer made app + site — verified the candy hex codes against `JamBox/Theme.swift:40-55`: `#FF1F8F` (line 40), `#8C198C` (line 41), `#3FB5FF` (line 42), `#FFE34D` lemon accent (line 55) — all four match the page exactly.
+
+### Design Spec Adherence
+
+- [PASS] Visual direction (dark violet stage, gold phonograph centered, candy as accent only) — `style.css:42-46` (radial corner washes + linear violet base), `:65-75` (logo with pink+cyan drop-shadow halos preserving the gold), `:83` (gradient wordmark), `:109` (gradient button). Spec honored.
+- [PASS] Layout (hero / features / footer, three sections, no nav) — `index.html:11-65` matches the wireframe exactly: `<main>` with `.hero` and `.features`, then `<footer>`. No nav, no sticky anything.
+- [PASS] Copy verbatim — all 13 strings (title, description, wordmark, tagline, button label, button sub-label, section title, six feature title/body pairs, footer) match the spec table exactly.
+- [PASS] Color & typography — palette hex codes match spec; type stack `-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif` at `style.css:19` matches verbatim. Wordmark `clamp(64px, 12vw, 144px)` weight 800 letter-spacing -0.04em (`:79-81`); tagline `clamp(17px, 2.2vw, 22px)` (`:91`); download label 18px 700 0.01em (`:111-113`); download sub 12px uppercase 500 0.04em (`:129-132`); section title `clamp(24px, 4vw, 36px)` 700 -0.02em (`:170-172`); feature h3 17px 700 -0.01em (`:201-203`); feature body 15px 400 (`:209-210`); footer 13px 400 (`:225-226`). Every line of the type table is honored.
+- [PASS] Spacing & sizing — logo 240×240 with `60vw` cap (`:66-69`); hero `min-height: 100vh`, padding `64px 24px 96px` (`:37-38`); hero max-width 720px (`:61`); tagline max-width 480px (`:94`); button padding `18px 44px` border-radius `999px` (`:106-108`); features padding `96px 24px` (`:158`); features inner max-width 960px (`:164`); grid `repeat(auto-fit, minmax(260px, 1fr))` 20px gap (`:182-184`); feature card padding `24px 24px 26px` border-radius 16px translucent border (`:187-191`); footer padding `32px 24px 40px` (`:217`); single mobile breakpoint at `max-width: 600px` (`:247`); mobile logo 180×180 (`:253-255`). Every line of the spacing spec is honored.
+- [PASS] Interaction notes — hover translateY(-2px) brightness(1.06) deeper shadow 160ms ease (`:136-143`); active translateY(0) brightness(0.96) (`:150-153`); focus-visible 3px solid #FFE34D outline 4px offset (`:145-148`); feature card hover 0.04→0.06 background lift with lemon-tinted border (`:194-197`); footer link hover lemon (`:235-238`); `prefers-reduced-motion` block disables transitions and the hover translate (`:273-282`). No JS. All interaction guardrails honored.
+- [PASS] Asset list — three files present at the spec'd paths; phonograph byte-identical to source (76,902 bytes); CSS 5.4KB (under 10KB budget).
+- [PASS] Do-not-do guardrails — phonograph not recolored (used as-is via `<img src>`); no screenshot of app; no external font; no JavaScript at all; no nav/sticky/anchor; no popup/banner/carousel/testimonial/logo strip; no Open Graph (correctly skipped per scope); favicon reuses phonograph (`index.html:8`); no flat full-page candy gradient (dark violet stage preserved); no scroll/parallax/marquee; no CSS framework; no build step; no `AVURLAsset`; no git operations performed. All guardrails honored.
 
 ### Invariants
 
+- [N/A] §7.1 AVURLAsset — no Swift/audio code touched.
+- [N/A] §7.2 Gapless — no PlayerEngine touched.
+- [N/A] §7.3 Two-phase loading — no scanner touched.
+- [N/A] §7.4 Sandbox bookmarks — no file access code touched.
+- [N/A] §7.5 xcodegen — no source files added/removed; staging dir is gitignored and not part of the Xcode project.
+- [PASS] §7.6 Build green — ran `xcodebuild -project JamBox.xcodeproj -scheme JamBox build`. Result: `** BUILD SUCCEEDED **`. The landing-page card does not touch app code; build verified unaffected.
+
 ### Findings
+
+- [NIT] `style.css:90-96` — `.tagline` declares `margin: 0 0 40px` then immediately overrides `margin-left: auto; margin-right: auto;`. The second pair only sets horizontal margins so the bottom margin survives, but it's slightly clumsy. A single `margin: 0 auto 40px;` would read cleaner. Functionally correct.
+- [NIT] Designer self-audit (card line ~150) describes Text secondary as `rgba(245,243,255,0.75)` but `.tagline` actually uses `0.82` at `style.css:93`. Spec drift, not a defect — the implementation chose slightly higher contrast, which is the safer direction. The 0.75 value is correctly used for feature body text at `style.css:210`.
+- [NIT] Page renders dark in browsers set to light mode (no `prefers-color-scheme` handling). This is intentional per the spec ("indie record-store dark stage") and the contrast on the dark surface is high (`#f5f3ff` on `#0b0418`), so light-mode visitors get the intended experience. Flagging only because hostile review surfaced it.
+- [NIT] Open Graph / Twitter Card meta tags are absent — explicitly out of scope per the card. Flagging only so the manager remembers to file a follow-up card later when sharing the URL on social platforms becomes desirable.
+
+No BLOCKER, MAJOR, or MINOR findings. The implementation faithfully matches the design spec; the spec faithfully covers the acceptance criteria; the artifact ships under budget with zero external requests, valid semantic HTML5, full keyboard accessibility (focus-visible ring), reduced-motion handling, meaningful alt text, and a working responsive layout from 375px to 1920px.
 
 ### Recommendation
 
+- **APPROVE.** The card is shippable as-is. The two NIT items (tagline margin shorthand, self-audit opacity drift) are not worth a kickback or a child card — the manager can mention them in the closing decision if desired, or ignore them. The Open Graph note is a future-work consideration, not a defect.
+
+Next manager action per the card: set up the orphan `gh-pages` branch, copy the staging files onto it, push it, and enable GitHub Pages on the repo.
+
 ## Manager Decision
 *Filled in by the manager when closing or kicking back.*
+
+## Manager Decision
+2026-04-07 — APPROVE. qa-05 walked all 14 frontmatter acceptance bullets, all 8 design spec subsections, and the technical claims (84,852 bytes total, candy palette matches Theme.swift exactly, byte-identical phonograph copy, no external requests, valid HTML5 with lang/viewport/alt/favicon, focus-visible + prefers-reduced-motion accessibility, build green). Three NITs only, none worth a kickback. First card to use the new designer role and the loop worked end-to-end. Closing to done/. Manager will set up the orphan gh-pages branch and push next.
