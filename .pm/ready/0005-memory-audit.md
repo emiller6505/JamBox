@@ -9,12 +9,13 @@ priority: P1
 estimate: L
 depends_on: []
 touches:
-  - JamBox/PlayerEngine.swift
+  - JamBox/FolderWatcher.swift
   - JamBox/FileScanner.swift
   - JamBox/Track.swift
+  - JamBox/PlayerEngine.swift
+  - JamBox/AppModel.swift
   - JamBox/ContentView.swift
   - JamBox/NowPlayingBar.swift
-  - JamBox/AppModel.swift
 acceptance:
   - Current memory usage baseline is documented with a breakdown by category (resident memory, heap, image data, audio buffers, etc.) — the engineer must run instrumentation or have the human run Instruments and report numbers, not just guess
   - The top 3 memory contributors are identified by name, with file:line evidence pointing at the allocations responsible
@@ -38,11 +39,48 @@ Reported by the human owner via Xcode's process stats:
 
 For reference, mainstream macOS music players typically idle in the 200–500 MB range with comparable libraries, and they generally do more than JamBox does. 1 GB for a minimalist player is a 2–5x overshoot and is the kind of footprint that will cause macOS to memory-pressure-warn other apps on machines with 8 or 16 GB of RAM. This is a P1 — not because anything crashes, but because it makes JamBox a bad citizen on the user's machine.
 
-### Manager assumptions at the time of card creation (engineer should confirm or revise)
+### User answers to clarifying questions (post-creation update)
 
-- **Overlay state during measurement:** assumed CLOSED. If the user took the measurement with the full-screen album art overlay (`showArtwork == true`) open, then a substantial chunk could be a single decoded full-resolution `NSImage` of the current album art. A 3000×3000 cover decoded to an `NSBitmapImageRep` is ~36 MB; held in two or three places it adds up fast. If overlay was open during measurement, the engineer should ask the user to remeasure with it closed and report the delta as a separate data point.
-- **Memory shape:** assumed STEADY-STATE, not growing. If the 1 GB is reached and held, the fix is architectural (oversized cache, oversized decoded image). If memory grows over time (linear or stairsteppy), there is a leak — find it with the Memory Graph debugger or `MallocStackLogging`. Engineer should confirm the shape early in plan mode and let the answer guide their investigation.
-- **Library size:** assumed "normal personal library, low thousands of tracks." If the user has 50,000+ tracks, the per-track metadata floor changes the math. Engineer should ask the user for an exact count if it materially affects the target.
+The user answered the manager's three clarifying questions:
+
+1. **Overlay state during measurement:** CLOSED — table view only. So the 1 GB is not the full-screen artwork overlay; the overlay is a separate cost on top.
+2. **Memory shape:** **SAWTOOTH.** Memory grows from about 500 MB to about 1 GB, then jumps back down to 500 MB, repeating over and over throughout playback.
+3. **Library size:** about 1000 tracks at most, likely fewer.
+
+### THE SAWTOOTH IS THE LOAD-BEARING CLUE
+
+A 500 MB sawtooth oscillation happening repeatedly during idle playback is **not a leak** (leaks are monotonic) and **not steady-state** (steady-state is flat). It is **churn**: something is allocating ~500 MB worth of objects on a recurring cycle, those objects become unreachable, ARC sweeps them, the cycle repeats. The very rough math: 1000 tracks × ~500 KB per track = 500 MB. That number falls out naturally if we are reallocating per-track artwork or metadata structures on a cycle.
+
+### NEW LEADING HYPOTHESIS (manager's strong guess)
+
+**`FolderWatcher` (FSEvents) is firing too aggressively, repeatedly re-running the scan + metadata + artwork pipeline, churning the entire `Track[]` array and its associated artwork.** The mechanism would be:
+
+1. AVFoundation, while playing files from the watched folder, touches the files for read (atime, lock, etc.).
+2. FSEvents notices the access and notifies `FolderWatcher`.
+3. `FolderWatcher` debounces briefly, then triggers a folder rescan.
+4. `FileScanner.scanFolder` allocates a fresh `Track[]` array. The async metadata enrichment phase begins, loading metadata for each track (including artwork blobs) in parallel via `withTaskGroup` with bounded concurrency.
+5. The new array is published to `player.tracks`. The old array becomes unreachable.
+6. ARC sweeps the old array (and its artwork blobs and metadata structures) — memory drops back to baseline.
+7. AVFoundation continues playing, touches more files, FSEvents fires again. **GOTO 1.**
+
+If this is the bug, every step of the chain is independently bad:
+- FSEvents should not be firing on **read-only** access (only on actual file changes). Either the watcher is configured to listen to the wrong event types, or AVFoundation is doing something that legitimately mutates the filesystem (atime updates on a non-noatime mount?).
+- The rescan should be a no-op if no real changes happened (compute a manifest hash, compare, skip). It's currently doing a full re-enrichment.
+- The metadata enrichment should not allocate fresh artwork blobs if the artwork is already cached per-folder. Either the cache is being invalidated on rescan, or artwork was never going through the cache during enrichment (only during playback).
+
+Each of those is a fixable hot spot. The first one (preventing the spurious FSEvents re-fire) is the highest-leverage — if rescans don't happen, the rest is moot.
+
+### Engineer investigation priorities (revised)
+
+1. **First, confirm the sawtooth is FolderWatcher-driven.** Add a `print` statement at the entry point of `FolderWatcher`'s scan-trigger callback. Hand the build to the human, ask them to play music for 60 seconds and report how often the print fires. If it fires every few seconds during the sawtooth, the hypothesis is confirmed.
+2. **If confirmed, fix the FSEvents firing first.** Check what event mask `FolderWatcher` subscribes to — should be `kFSEventStreamCreateFlagFileEvents` filtered to actual content changes (`kFSEventStreamEventFlagItemModified`, `kFSEventStreamEventFlagItemCreated`, `kFSEventStreamEventFlagItemRemoved`, `kFSEventStreamEventFlagItemRenamed`), NOT access events. Inode-touch events should be filtered out.
+3. **Add a manifest hash short-circuit.** Even if FSEvents is firing legitimately, the rescan should compare the new file list (and mtimes) against the old, and if nothing actually changed, return without re-enriching.
+4. **Verify the per-folder artwork cache is actually being used during metadata enrichment.** If `Track.loadMetadata` decodes artwork into a fresh `NSImage` per call without consulting the cache, that's the per-cycle allocation source — fix the cache plumbing.
+5. **Then, and only then,** look at steady-state contributors (cache size bounds, decoded vs encoded image storage, etc.). But the sawtooth almost certainly dominates the bill — fix that first and remeasure before optimizing the floor.
+
+### Other hypotheses to keep alive (lower priority given the new clue)
+
+The original hypotheses (decoded artwork cache, per-track artwork retention, metadata blobs, retain cycles, theme/window-chrome retention) are all still candidates **for the steady-state 500 MB floor** that remains after the sawtooth churn is accounted for. They are not the primary suspects for the sawtooth itself.
 
 ### Hypotheses to investigate (engineer should also generate their own)
 
@@ -82,7 +120,9 @@ The engineer should confirm in plan mode whether their investigation focus colli
 
 ### Manager dispatch note (not for the engineer)
 
-This card is in `backlog/` because the manager should ask the human Q1–Q3 (overlay state, memory shape, library size) before dispatching, to set the engineer's starting orientation correctly. After answers, promote to `ready/` and dispatch. Decide whether to do this card or 0004 first based on the user's priorities.
+User answered Q1–Q3; card is being promoted to `ready/`. **Strong recommendation: dispatch this card BEFORE card 0004 (album art).** Rationale: the leading hypothesis points at the artwork/metadata pipeline churning the entire library on a loop. Adding more artwork rendering to the table (which is what 0004 does) on top of a broken artwork pipeline would be silly — the right order is fix the pipeline, then add more art rendering on top of the now-correct pipeline.
+
+If the engineer's investigation rules out the artwork-pipeline hypothesis, the cards become independent and order no longer matters.
 
 ## Plan
 *Filled in by the engineer during plan mode, BEFORE any code edits. See .pm/README.md §5.*
@@ -99,6 +139,7 @@ This card is in `backlog/` because the manager should ask the human Q1–Q3 (ove
 
 ## Log
 - 2026-04-06 — manager created card in backlog/, awaiting Q1–Q3 answers from human before promoting
+- 2026-04-06 — manager received Q1–Q3 answers (table-only, sawtooth 500MB↔1GB, ~1000 tracks); updated Context with sawtooth diagnosis and FolderWatcher leading hypothesis; promoted to ready/; awaiting dispatch
 
 ## Self-Audit
 *Filled in by the engineer before handing off to QA. See .pm/README.md §6.*
