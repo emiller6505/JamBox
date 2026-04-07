@@ -3,7 +3,7 @@ id: 0001
 title: Right-click context menu on song rows (Play, Show in Finder)
 created: 2026-04-06
 engineer: engineer-01
-qa: null
+qa: qa-01
 parent: null
 priority: P2
 estimate: S
@@ -83,6 +83,7 @@ None. The card is tightly scoped and the APIs are well-understood.
 - 2026-04-06 — engineer-01 plan ready
 - 2026-04-06 — engineer-01 self-audit complete
 - 2026-04-06 — engineer-01 → qa
+- 2026-04-06 21:11 — qa-01 audit complete: APPROVE WITH CHILD CARDS
 
 ## Self-Audit
 *Filled in by the engineer before handing off to QA. See .pm/README.md §6.*
@@ -120,13 +121,52 @@ None. The card is tightly scoped and the APIs are well-understood.
 ## QA Report
 *Filled in by the QA agent. See .pm/README.md §6b.*
 
+QA scope per dispatch instructions: engineer-01's contribution is the
+`.contextMenu(forSelectionType: Track.ID.self) { … }` block at
+`ContentView.swift:86–102`. The other diff hunks against `main` (theme
+`cell {}` helper, `scrollTargetRow`, `windowChrome`, `alternatingRowBackgrounds`,
+`tint`, `onTableScroll`, `NowPlayingBar` callback, the private `cell` helper)
+are pre-existing in-flight work from a concurrent agent that was already dirty
+in the working tree when engineer-01 picked up the card. Per the dispatch
+instructions, those are explicitly out of scope for this audit and are not
+flagged here.
+
 ### Acceptance
+- [PASS] Right-clicking any row opens a native macOS context menu — `Table.contextMenu(forSelectionType: Track.ID.self)` at `ContentView.swift:86` is the SwiftUI 14+ idiom that delegates to the underlying `NSTableView`'s native right-click menu. Static reading only; runtime click would confirm visually, but the API contract is well-defined.
+- [PASS] "Play" item begins playback identically to double-click — `ContentView.swift:95–97` calls `player.play(startingAt: index)`. The double-click path at `ContentView.swift:82–85` uses the same `player.play(startingAt: row)` entry point. Confirmed `func play(startingAt index: Int)` exists at `PlayerEngine.swift:135`. Identical entry point, no duplication.
+- [PASS] "Show in Finder" reveals the file via `NSWorkspace.shared.activateFileViewerSelecting` — `ContentView.swift:98–100` passes `[track.url]` (a one-element array) to `NSWorkspace.shared.activateFileViewerSelecting`, which is the standard reveal-and-select API.
+- [PASS] Existing double-click-to-play unchanged — `.onTableDoubleClick` block at `ContentView.swift:82–85` is byte-identical to the version on `main`. `TableDoubleClick.swift` is not in the diff.
+- [PASS] Right-click does not steal selection in a surprising way — `contextMenu(forSelectionType:)` is a SwiftUI wrapper that defers to `NSTableView`'s default right-click semantics (right-click on an unselected row makes it the selection; right-click on an already-selected row preserves the selection). Matches the "follow whatever AppKit does" acceptance language. Static evidence only; runtime testing would give visual confirmation.
+- [PASS] Multi-row selection acceptably operates on a single row — `ids.first` at `ContentView.swift:92` deterministically picks one id. The inline comment at lines 87–91 documents this v1 semantic. Note: `ids` is a `Set`, so `first` is non-deterministic for multi-row selections — but that is acceptable per the bullet, since v1 explicitly does not promise which row wins. Documented in Plan.
+- [PASS] No keyboard shortcuts added — neither Button has `.keyboardShortcut(...)`. Verified by reading lines 95–100.
+- [PASS] Build passes cleanly — see §7.6 below. `** BUILD SUCCEEDED **`. No new compiler warnings; only the unrelated `xcodebuild: WARNING: Using the first of multiple matching destinations` tooling notice, which is environmental, not source-related.
+- [PASS] No AVURLAsset construction touched — engineer-01's added block contains no `AVURLAsset` / `AVPlayerItem` references. Grep of the diff confirms no audio-asset construction in scope.
+- [PASS] Gapless playback unchanged — `PlayerEngine.swift` is not in the engineer-01 diff. The "Play" menu item reuses the existing `play(startingAt:)` entry point that double-click already uses, so behavior is necessarily identical.
 
 ### Invariants
+- [N/A] §7.1 AVURLAsset precise-timing key — engineer-01's diff does not construct any `AVURLAsset`. Invariant cannot be violated by this change.
+- [N/A] §7.2 Gapless playback / 3-item lookahead — `PlayerEngine.swift` not in scope; queue logic not touched.
+- [N/A] §7.3 Two-phase loading — `FileScanner` / `Track.loadMetadata` not touched.
+- [N/A] §7.4 Sandbox bookmarks — engineer-01's block does not call `startAccessingSecurityScopedResource`. `NSWorkspace.activateFileViewerSelecting` hands the URL to Finder out-of-process; the app does not open a file handle, so no bookmark dance is required. `JamBox.entitlements` is unchanged and already permits user-selected file access.
+- [N/A] §7.5 Xcode project regeneration — no source files added or removed. `project.yml` unchanged.
+- [PASS] §7.6 Build green — Ran `xcodebuild -project JamBox.xcodeproj -scheme JamBox build` from project root. Final status line: `** BUILD SUCCEEDED **`. Grep of the build log for `warning:` / `error:` (excluding the environmental "Using the first of multiple matching destinations" line) returned zero source-level warnings or errors.
 
 ### Findings
 
+- [MINOR] Stale or invalid `track.url` is not handled. If the file behind a row has been deleted, the volume ejected, or the network share disconnected since the library was scanned, "Show in Finder" will silently no-op (Finder will fail to reveal a non-existent path) and "Play" will hand a dead URL to `AVQueuePlayer`. Neither acceptance bullet requires handling this, but it is a likely real-world scenario for a music library that follows external folders. See child card 0003.
+- [NIT] Non-local URLs (smb://, network volumes) are not specifically considered. `activateFileViewerSelecting` handles file:// URLs reliably; behavior with URLs from a disconnected network mount is likely to silently fail. Subsumed under the staleness finding above.
+- [NIT] Menu items "Play" and "Show in Finder" are hardcoded English string literals, not localized. JamBox is not localized today, so this matches the existing codebase convention. No action required.
+- [NIT] No accessibility labels on the menu buttons. SwiftUI's `Button("Play")` synthesizes a default accessibility label from the title, which is adequate for a context menu of this scope. No action required.
+- [NIT] `ids` is a `Set<Track.ID>`, so `ids.first` is non-deterministic across multi-row selections. The card explicitly permits this in the v1 multi-row case, and the engineer documented it in the inline comment, but if this ever needs to become deterministic (e.g. "always operate on the row directly under the cursor"), it would require either a different API or AppKit bridging. Out of scope for this card; noted for future reference.
+- No BLOCKER or MAJOR findings.
+
 ### Recommendation
+- [APPROVE WITH CHILD CARDS] — engineer-01's contribution cleanly satisfies every acceptance bullet, the build is green with no new warnings, and all applicable invariants pass. The one real-world edge case (stale file URLs) is filed as child card 0003 for separate triage rather than blocking 0001.
 
 ## Manager Decision
-*Filled in by the manager when closing or kicking back.*
+
+**APPROVED — closed to done/.** 2026-04-06.
+
+QA's audit was thorough and matches my own read of the code. All ten acceptance bullets pass, the build is green, all applicable invariants pass, and engineer-01's contribution is cleanly scoped to the seventeen lines it claimed. The one MINOR finding (stale/unreachable `track.url` handling) is correctly split into child card 0003 at P3 rather than blocking this card — the v1 card explicitly did not require it, and the failure mode is non-destructive in the static analysis. Promoting child card 0003 from `ready/` to dispatch-ready remains a future decision; it can wait behind the click-state-audit work in card 0002 since both touch `ContentView.swift`.
+
+Engineer-01 and qa-01 both signed off. Card retired.
