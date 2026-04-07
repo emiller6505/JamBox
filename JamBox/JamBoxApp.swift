@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct JamboxApp: App {
+struct JamBoxApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()

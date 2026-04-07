@@ -1,4 +1,4 @@
-name: Jambox
+name: JamBox
 options:
   bundleIdPrefix: com.jambox
   deploymentTarget:
@@ -7,17 +7,18 @@ options:
   generateEmptyDirectories: false
 
 targets:
-  Jambox:
+  JamBox:
     type: application
     platform: macOS
     sources:
-      - path: Jambox
+      - path: JamBox
         excludes:
           - "*.entitlements"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.jambox.app
-        CODE_SIGN_ENTITLEMENTS: Jambox/Jambox.entitlements
+        PRODUCT_NAME: JamBox
+        CODE_SIGN_ENTITLEMENTS: JamBox/JamBox.entitlements
         CODE_SIGN_STYLE: Automatic
         INFOPLIST_GENERATION_MODE: GeneratedByXcode
         GENERATE_INFOPLIST_FILE: YES
@@ -26,6 +27,7 @@ targets:
         SWIFT_EMIT_LOC_STRINGS: "YES"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_CFBundleIconName: AppIcon
+        INFOPLIST_KEY_CFBundleDisplayName: JamBox
     dependencies:
       - framework: AVFoundation.framework
         embed: false

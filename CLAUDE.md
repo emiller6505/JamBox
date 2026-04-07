@@ -4,19 +4,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Jambox is a minimalist macOS music player with gapless audio playback as a first-class priority. Built with Swift and SwiftUI, targeting macOS 14.0+.
+JamBox is a minimalist macOS music player with gapless audio playback as a first-class priority. Built with Swift and SwiftUI, targeting macOS 14.0+.
 
 ## Build Commands
 
 ```bash
 # Build
-xcodebuild -project Jambox.xcodeproj -scheme Jambox build
+xcodebuild -project JamBox.xcodeproj -scheme JamBox build
 
 # Run the built app
-open ~/Library/Developer/Xcode/DerivedData/Jambox-*/Build/Products/Debug/Jambox.app
+open ~/Library/Developer/Xcode/DerivedData/JamBox-*/Build/Products/Debug/JamBox.app
 
 # Run with stdout visible (for debug prints)
-~/Library/Developer/Xcode/DerivedData/Jambox-*/Build/Products/Debug/Jambox.app/Contents/MacOS/Jambox
+~/Library/Developer/Xcode/DerivedData/JamBox-*/Build/Products/Debug/JamBox.app/Contents/MacOS/JamBox
 
 # Regenerate Xcode project after adding/removing files (requires xcodegen)
 xcodegen generate
@@ -47,6 +47,6 @@ xcodegen generate
 ## Project Configuration
 
 - `project.yml` — XcodeGen spec. Run `xcodegen generate` after adding/removing source files.
-- `Jambox/Jambox.entitlements` — App sandbox: read-only user-selected files, app-scoped bookmarks.
+- `JamBox/JamBox.entitlements` — App sandbox: read-only user-selected files, app-scoped bookmarks.
 - Bundle ID: `com.jambox.app`
 - Supported audio formats: mp3, m4a, flac, aiff, aif, wav, alac, aac.

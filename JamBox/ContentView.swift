@@ -245,7 +245,7 @@ struct ContentView: View {
             )
             bookmarkData = data
         } catch {
-            print("[Jambox] Failed to save bookmark: \(error)")
+            print("[JamBox] Failed to save bookmark: \(error)")
         }
     }
 
@@ -259,7 +259,7 @@ struct ContentView: View {
                 bookmarkDataIsStale: &isStale
             )
             guard url.startAccessingSecurityScopedResource() else {
-                print("[Jambox] Failed to access security-scoped resource")
+                print("[JamBox] Failed to access security-scoped resource")
                 return nil
             }
             activeScopedURL = url
@@ -269,7 +269,7 @@ struct ContentView: View {
             }
             return url
         } catch {
-            print("[Jambox] Failed to resolve bookmark: \(error)")
+            print("[JamBox] Failed to resolve bookmark: \(error)")
             return nil
         }
     }

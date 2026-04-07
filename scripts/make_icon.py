@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Turn any square-ish image into the macOS AppIcon set for Jambox.
+Turn any square-ish image into the macOS AppIcon set for JamBox.
 
 Usage:  python3 scripts/make_icon.py path/to/image.png
 
@@ -19,7 +19,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-APPICON_DIR = REPO_ROOT / "Jambox" / "Media.xcassets" / "AppIcon.appiconset"
+APPICON_DIR = REPO_ROOT / "JamBox" / "Media.xcassets" / "AppIcon.appiconset"
 
 # (slot_size, scale) -> pixel size
 SLOTS = [

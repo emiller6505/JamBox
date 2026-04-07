@@ -49,7 +49,7 @@ final class FolderWatcher {
             latency,
             flags
         ) else {
-            print("[Jambox] FSEventStreamCreate failed")
+            print("[JamBox] FSEventStreamCreate failed")
             return
         }
 

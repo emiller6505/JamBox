@@ -22,7 +22,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-APPICON_DIR = REPO_ROOT / "Jambox" / "Media.xcassets" / "AppIcon.appiconset"
+APPICON_DIR = REPO_ROOT / "JamBox" / "Media.xcassets" / "AppIcon.appiconset"
 SCRIPT = REPO_ROOT / "scripts" / "make_icon.py"
 
 EXPECTED_SIZES = [16, 32, 64, 128, 256, 512, 1024]
