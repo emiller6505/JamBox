@@ -3,7 +3,7 @@ id: 0002
 title: Audit & fix song-table clicking/focus state machine
 created: 2026-04-06
 engineer: engineer-02
-qa: null
+qa: qa-02
 parent: null
 priority: P1
 estimate: L
@@ -249,6 +249,7 @@ Table will be unstable, regardless of whatever other bugs may exist.
 - 2026-04-06 — engineer-02 (respawn) starting investigation with updated symptom info
 - 2026-04-06 — engineer-02: confirmed 4Hz periodic time observer hypothesis via static analysis; isolated `playbackPosition`/`playbackDuration` into a new `PlaybackClock: ObservableObject` so `ContentView` no longer subscribes to high-frequency time updates; updated `NowPlayingBar` and `MediaKeyController` consumers; build PASS; touches list updated to PlayerEngine + NowPlayingBar + MediaKeyController + ContentView
 - 2026-04-06 — engineer-02 → qa (Shape A: confident static fix)
+- 2026-04-06 — qa-02 starting independent audit
 
 ## Self-Audit
 *Filled in by the engineer before handing off to QA. See .pm/README.md §6.*
@@ -490,4 +491,15 @@ follow-up cards, they're easy spinoffs.
 ### Recommendation
 
 ## Manager Decision
-*Filled in by the manager when closing or kicking back.*
+
+**APPROVED — closed to done/.** 2026-04-06.
+
+The human owner runtime-tested the build and reports they can no longer reproduce the click-flicker bug. Quote: "so far it looks great! I can't repro the bug anymore so let's call it closed. if needed I will reopen it with you later."
+
+Runtime user verification is the highest-confidence signal we have for this card — the static QA cycle would only have been valuable if the user couldn't test, and they did. **qa-02 was stopped mid-audit by the manager** at the user's directive to avoid spending cycles on a verdict the user has already given. No QA Report was written. If we ever reopen this card or see related symptoms, we should respawn QA at that point.
+
+Engineer-02's diagnosis and fix were exactly right: the 4Hz periodic time observer on `PlayerEngine` was triggering `ContentView.body` re-evals at 4Hz via SwiftUI's `ObservableObject` subscription semantics, racing with AppKit click commits. Extracting the high-frequency state into `PlaybackClock` and having `ContentView` not observe it broke the race. The "every third click" failure rate fingerprint was load-bearing evidence and the fix matches the math.
+
+Engineer-02's `## Findings` (F1: redundant rewires in `TableDoubleClickHelper.updateNSView`; F2: redundant async dispatches in `TableScrollerHelper.updateNSView`) remain documented in this card as low-priority nice-to-haves. Both were dramatically de-fanged by this fix (no longer firing at 4Hz). Manager decision: leave them in this card's history rather than spinning them out as separate cards. If they ever cause user-visible problems, file new cards then.
+
+Card retired.
