@@ -28,12 +28,19 @@ extension View {
 private struct WindowAccessor: NSViewRepresentable {
     let theme: Theme
 
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    final class Coordinator {
+        var didClearInitialFocus = false
+    }
+
     func makeNSView(context: Context) -> NSView {
         NSView()
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
         let theme = self.theme
+        let coordinator = context.coordinator
         DispatchQueue.main.async {
             guard let window = nsView.window else { return }
             window.titlebarAppearsTransparent = theme.transparentTitleBar
@@ -43,6 +50,16 @@ private struct WindowAccessor: NSViewRepresentable {
             // Harmless when the titlebar is opaque, so leave it on once set.
             if theme.transparentTitleBar {
                 window.styleMask.insert(.fullSizeContentView)
+            }
+            // One-shot: clear the window's initial first responder so the
+            // search field doesn't auto-grab focus on launch. Without this,
+            // SwiftUI/AppKit makes the first focusable text field key on
+            // window appear, which would swallow spacebar play/pause.
+            // Cmd-F still focuses the search field (the @FocusState binding
+            // on ContentView is independent of this initial clear).
+            if !coordinator.didClearInitialFocus {
+                coordinator.didClearInitialFocus = true
+                window.makeFirstResponder(nil)
             }
         }
     }
