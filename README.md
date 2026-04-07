@@ -14,8 +14,30 @@ A simple music player for macOS 14+. Point it at a folder of music and let it ro
 - **Album art.** Pulled from embedded metadata or a `cover`/`folder`/`album`/`front` image in the folder.
 - **Folders persist.** Your picked folders stick around across launches.
 
+## Install
+
+Download the latest `JamBox-*.dmg` from the [Releases page](../../releases), open it, and drag **JamBox.app** to the Applications shortcut.
+
+**First launch.** macOS will block the app the first time with a "cannot be checked for malicious software" message. JamBox isn't signed by a paid Apple Developer account, so Gatekeeper objects. There's a `READ ME FIRST.txt` in the DMG with full instructions. The fastest fix is to open Terminal and run:
+
+```
+xattr -dr com.apple.quarantine /Applications/JamBox.app
+```
+
+Then double-click JamBox normally. You only need to do this once.
+
 ## Using it
 
 1. Launch the app.
 2. Add a folder (probably `~/Music`).
 3. Double-click a track to play. Use the bottom bar to pause, skip, or scrub.
+
+## Themes
+
+Three themes are available under **JamBox → Theme** in the menu bar:
+
+- **Light** (default) — clean and minimal
+- **Dark** — VSCode-inspired dark grays with a blue accent
+- **Candy** — vibrant pink and orange inspired by the app icon
+
+Your choice persists across launches.
