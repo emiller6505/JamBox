@@ -2,6 +2,8 @@
 id: NNNN
 title: <imperative one-liner: "Add X", "Fix Y", "Refactor Z">
 created: YYYY-MM-DD
+needs_design: false       # set true to require a designer pass before engineering
+designer: null            # set when dispatched to a designer
 engineer: null
 qa: null
 parent: null
@@ -19,6 +21,9 @@ acceptance:
 
 ## Context
 Why this card exists. Link to roadmap line, user quote, screenshot, or parent card.
+
+## Design
+*Filled in by the designer BEFORE engineering starts. Required when `needs_design: true`. Otherwise omit. See .pm/README.md §4b.*
 
 ## Plan
 *Filled in by the engineer during plan mode, BEFORE any code edits. See .pm/README.md §5.*

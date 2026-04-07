@@ -6,9 +6,10 @@
 
 ## 1. Roles
 
-- **Manager** — the human's proxy. Receives feature requests, asks clarifying questions, writes cards, dispatches agents, processes QA reports, and closes cards. There is exactly one manager.
-- **Engineer agent** — implements one card at a time. There may be many engineers running concurrently. Each engineer is spawned with a specific card id; it does not browse the board for work.
-- **QA agent** — spawned fresh per card. The QA's only job is to audit one card's completed engineer work against its acceptance criteria and the project-wide invariants (§7). QA never writes feature code. QA may create new cards for issues it finds. Multiple QA agents may run concurrently on different cards.
+- **Manager** — the human's proxy. Receives feature requests, asks clarifying questions, writes cards, dispatches agents, processes design and QA reports, and closes cards. There is exactly one manager.
+- **Designer agent** — defines the *visual and interaction spec* for cards that have a meaningful UI surface. The designer fills in the card's `## Design` section BEFORE the engineer starts planning. Output is words, not code: layout, hierarchy, copy, color/typography choices (always referencing existing `Theme.swift` tokens where possible), sketches in ASCII or markdown, and explicit do-not-do guardrails. Designers may also produce static asset deliverables (HTML/CSS for landing pages, SVG icons, etc.) when the card IS the design artifact. Multiple designers may run concurrently on different cards.
+- **Engineer agent** — implements one card at a time. There may be many engineers running concurrently. Each engineer is spawned with a specific card id; it does not browse the board for work. If a card has a `## Design` section, the engineer treats it as binding spec and does not relitigate visual choices in plan mode.
+- **QA agent** — spawned fresh per card. The QA's only job is to audit one card's completed engineer (and designer, if applicable) work against its acceptance criteria, the design spec, and the project-wide invariants (§7). QA never writes feature code. QA may create new cards for issues it finds. Multiple QA agents may run concurrently on different cards.
 
 Agents are spawned by the manager via the `Agent` tool. They terminate when their assigned task is complete — there is no long-running process to "kill."
 
@@ -22,7 +23,8 @@ Agents are spawned by the manager via the `Agent` tool. They terminate when thei
   board.md          ← human-readable index, regenerated from lanes
   CARD-TEMPLATE.md
   backlog/          ← raw, not ready to work
-  ready/            ← groomed, awaiting engineer dispatch
+  ready/            ← groomed, awaiting engineer dispatch (design done if needed)
+  design/           ← designer working, card flagged needs_design: true
   in-progress/      ← engineer working, exactly one owner
   qa/               ← engineer done, QA auditing
   blocked/          ← stuck on external input
@@ -84,11 +86,13 @@ Append-only chronological record. Newest at bottom.
 ## 4. Lifecycle
 
 ```
-backlog → ready → in-progress → qa → done
-                       ↑         ↓
-                       └─────────┘
-                       (kickback on QA fail)
+backlog → ready → [design] → in-progress → qa → done
+                                  ↑         ↓
+                                  └─────────┘
+                                  (kickback on QA or design fail)
 ```
+
+The `[design]` step is optional. It is mandatory for cards flagged `needs_design: true` in frontmatter. When present, the manager dispatches a designer agent BEFORE any engineer. The designer fills in `## Design`, leaves the card in `design/` while working, then moves it back to `ready/` (with a log line and commit) when handing off to engineering. Cards without `needs_design: true` skip the design lane entirely and go straight from `ready/` to `in-progress/`.
 
 Every transition: `mv` the file + append a `## Log` line + commit `pm: <id> → <lane>`.
 
@@ -98,6 +102,31 @@ Kickback flow when QA finds issues:
    - **Inline fix** (small, in scope): note it in the report. Card moves back to `in-progress/` for the original engineer.
    - **New card** (out of scope, or substantial enough to track separately): QA creates a child card with `parent: <original-id>` and places it in `ready/`. The original card may still proceed to `done/` if its own acceptance is met.
 3. Manager reviews the QA report and decides: close to `done/`, kick back to `in-progress/`, or escalate.
+
+---
+
+## 4b. **MANDATORY for designers: spec before code**
+
+A designer is dispatched only on cards flagged `needs_design: true`. The designer is the visual authority on that card. Engineering treats `## Design` as binding spec.
+
+Designer workflow:
+
+1. Confirm assignment: set `designer:` in frontmatter, move card from `ready/` to `design/`, log entry, commit `pm: <id> → design`.
+2. Read the card's `## Context`, the user request, and any referenced screenshots or assets. Read `JamBox/Theme.swift` to understand existing color/typography/spacing tokens — your spec MUST reuse these tokens by name where it touches in-app surfaces. For out-of-app surfaces (landing pages, marketing assets, GitHub READMEs, icons), you may invent fresh visual choices but should still reference the JamBox brand: phonograph icon (`docs/phonograph.png`), the candy theme palette (hot pink → deep purple → cyan), the minimalist tone.
+3. Write the `## Design` section. Cover, at minimum:
+   - **Visual direction:** one paragraph naming the mood (minimalist? vibrant? retro?), the references it pulls from, and the emotional read it should produce. Keep it specific.
+   - **Layout:** ASCII sketch, markdown wireframe, or numbered section breakdown. Annotate every element's role.
+   - **Copy:** every user-facing string the engineer should ship, verbatim. Engineering should not have to write copy.
+   - **Color & typography:** named tokens (from `Theme.swift` for in-app, or hex codes for out-of-app). Specify which font, weight, size for each text element.
+   - **Spacing & sizing:** approximate dimensions for non-text elements (logo size, hero padding, button hit-targets). For in-app, prefer existing pattern matches over absolute pixel values.
+   - **Interaction notes:** hover/focus/active states, animations, scroll behavior, anything dynamic.
+   - **Asset list:** every image, icon, or font file needed. Note where they live in the repo (or where the engineer should fetch them).
+   - **Do-not-do guardrails:** explicit list of things the engineer should NOT do (e.g. "do not add a stock photo of headphones," "do not change the dock icon," "do not reuse the candy gradient on the dark theme"). The point is to head off well-intentioned drift.
+4. If the card IS the design artifact (e.g. landing page, static HTML/CSS, SVG icon), the designer also produces the artifact files in addition to the spec. In that case the same agent is functioning as designer + engineer for one card and the engineer step is collapsed — note this in the log.
+5. Self-audit your spec: re-read the card's acceptance bullets and confirm every UI-touching bullet is unambiguously answered by the spec. If an acceptance bullet leaves a visual choice underspecified, the spec is incomplete — fix it before handing off.
+6. Move the card back to `ready/`, log entry, commit `pm: <id> design ready`. Notify the manager.
+
+If during engineering the spec turns out to be visually broken or impossible to implement faithfully: engineer kicks the card back to `design/` (not `blocked/`). Manager respawns the designer with the engineer's findings.
 
 ---
 
@@ -206,16 +235,30 @@ These are non-negotiable. Any card that violates them fails QA.
 
 ## 9. Quick reference
 
+### Designer loop
+```
+1. git pull --rebase
+2. Read .pm/README.md and the assigned card in .pm/ready/
+3. mv card to .pm/design/, set designer:, log, commit
+4. Read Theme.swift, the user request, any referenced assets
+5. Write ## Design covering visual direction, layout, copy, color/type, spacing, interaction, assets, guardrails
+6. If the card IS the design artifact, also produce the artifact files
+7. Self-audit: every UI acceptance bullet unambiguously answered
+8. mv to .pm/ready/, log, commit, notify manager
+9. STOP.
+```
+
 ### Engineer loop
 ```
 1. git pull --rebase
 2. Read .pm/README.md and the assigned card in .pm/ready/
-3. mv card to .pm/in-progress/, set engineer:, log, commit
-4. EnterPlanMode → write ## Plan → commit → ExitPlanMode
-5. Implement
-6. Self-audit (§6) → write ## Self-Audit
-7. mv to .pm/qa/, log, commit, notify manager
-8. STOP. Wait. Do not pick up another card.
+3. If card has ## Design, read it as binding spec — do NOT relitigate visual choices
+4. mv card to .pm/in-progress/, set engineer:, log, commit
+5. EnterPlanMode → write ## Plan → commit → ExitPlanMode
+6. Implement
+7. Self-audit (§6) → write ## Self-Audit
+8. mv to .pm/qa/, log, commit, notify manager
+9. STOP. Wait. Do not pick up another card.
 ```
 
 ### QA loop

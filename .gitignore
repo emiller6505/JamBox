@@ -69,3 +69,4 @@ fastlane/test_output
 
 # Release artifacts (scripts/release.sh)
 build/
+gh-pages-staging/
