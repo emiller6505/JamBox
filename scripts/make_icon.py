@@ -72,13 +72,22 @@ def sharpen(img: Image.Image) -> Image.Image:
 
 
 def round_corners(img: Image.Image, size: int = 1024) -> Image.Image:
-    """Resize to size x size and apply a rounded-square alpha mask."""
+    """Resize to size x size and apply a circular alpha mask.
+
+    The script currently assumes circular source art (which is what JamBox
+    uses). For a non-circular icon, swap the ellipse for a rounded_rectangle
+    using CORNER_RADIUS_RATIO.
+
+    The mask is rendered at 4x and downsampled with LANCZOS so the circle
+    edge is anti-aliased rather than stepped.
+    """
     img = img.resize((size, size), Image.LANCZOS)
     img = sharpen(img)
-    mask = Image.new("L", (size, size), 0)
-    draw = ImageDraw.Draw(mask)
-    radius = int(size * CORNER_RADIUS_RATIO)
-    draw.rounded_rectangle((0, 0, size - 1, size - 1), radius=radius, fill=255)
+    scale = 4
+    mask_hi = Image.new("L", (size * scale, size * scale), 0)
+    draw = ImageDraw.Draw(mask_hi)
+    draw.ellipse((0, 0, size * scale - 1, size * scale - 1), fill=255)
+    mask = mask_hi.resize((size, size), Image.LANCZOS)
     out = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     out.paste(img, (0, 0), mask)
     return out
