@@ -34,7 +34,7 @@ enum Theme: String, CaseIterable, Identifiable {
         case .dark:
             Color(red: 0.118, green: 0.118, blue: 0.118)   // VSCode editor #1E1E1E
         case .candy:
-            // Vibrant gradient pulled from the logo: hot pink → deep purple → cyan
+            // Vibrant three-stop gradient: hot pink → deep purple → cyan
             LinearGradient(
                 colors: [
                     Color(red: 1.00, green: 0.12, blue: 0.56),  // hot pink #FF1F8F (top)
