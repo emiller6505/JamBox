@@ -78,6 +78,7 @@ This card is in `backlog/`, NOT `ready/`. Do not dispatch it until card 0001 is 
 
 ## Log
 - 2026-04-06 — manager created card in backlog/, blocked on 0001
+- 2026-04-06 — manager promoted to ready/ after card 0001 closed; ready for engineer dispatch
 
 ## Self-Audit
 *Filled in by the engineer before handing off to QA. See .pm/README.md §6.*
