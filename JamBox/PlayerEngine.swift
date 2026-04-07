@@ -38,7 +38,17 @@ final class PlayerEngine: ObservableObject {
     private var queuePlayer = AVQueuePlayer()
     private var cancellables = Set<AnyCancellable>()
     private var currentIndex: Int?
+
+    /// Per-folder artwork cache, bounded LRU. Folders that haven't been
+    /// touched recently get evicted so the cache cannot grow without bound.
+    /// `nil` values are cached too (negative cache: "this folder has no art")
+    /// so we don't re-scan a folder that we already know has nothing.
+    /// Cap is intentionally small — playback is sequential, so the working
+    /// set is "current album + the next few," and 8 is plenty for that.
     private var artworkCache: [URL: NSImage?] = [:]
+    private var artworkCacheOrder: [URL] = []
+    private static let artworkCacheLimit = 8
+
     private var timeObserverToken: Any?
 
     /// How many items to keep buffered ahead in the queue.
@@ -105,6 +115,7 @@ final class PlayerEngine: ObservableObject {
         currentIndex = nil
         currentArtwork = nil
         artworkCache.removeAll()
+        artworkCacheOrder.removeAll()
         clock.position = 0
         clock.duration = 0
     }
@@ -255,6 +266,7 @@ final class PlayerEngine: ObservableObject {
         let folder = track.url.deletingLastPathComponent()
 
         if let cached = artworkCache[folder] {
+            touchArtworkCache(folder)
             currentArtwork = cached
             return
         }
@@ -262,11 +274,36 @@ final class PlayerEngine: ObservableObject {
         Task {
             let image = await Self.findArtwork(for: track.url)
             await MainActor.run {
-                self.artworkCache[folder] = image
+                self.insertArtworkCache(folder, image: image)
                 if self.currentTrack?.id == track.id {
                     self.currentArtwork = image
                 }
             }
+        }
+    }
+
+    /// Mark a folder as most-recently-used in the LRU order.
+    private func touchArtworkCache(_ folder: URL) {
+        if let idx = artworkCacheOrder.firstIndex(of: folder) {
+            artworkCacheOrder.remove(at: idx)
+        }
+        artworkCacheOrder.append(folder)
+    }
+
+    /// Insert a new entry into the bounded LRU artwork cache, evicting the
+    /// least-recently-used entry if the cache is full.
+    private func insertArtworkCache(_ folder: URL, image: NSImage?) {
+        if artworkCache[folder] != nil {
+            // Already present (race: two loads kicked off simultaneously).
+            // Refresh order but don't bump count.
+            touchArtworkCache(folder)
+            return
+        }
+        artworkCache[folder] = image
+        artworkCacheOrder.append(folder)
+        while artworkCacheOrder.count > Self.artworkCacheLimit {
+            let evict = artworkCacheOrder.removeFirst()
+            artworkCache.removeValue(forKey: evict)
         }
     }
 
@@ -279,7 +316,7 @@ final class PlayerEngine: ObservableObject {
             )
             if let data = try? await artworkItems.first?.load(.dataValue),
                let image = NSImage(data: data) {
-                return image
+                return downscale(image)
             }
         }
 
@@ -290,7 +327,7 @@ final class PlayerEngine: ObservableObject {
                         if item.identifier == .commonIdentifierArtwork,
                            let data = try? await item.load(.dataValue),
                            let image = NSImage(data: data) {
-                            return image
+                            return downscale(image)
                         }
                     }
                 }
@@ -312,10 +349,67 @@ final class PlayerEngine: ObservableObject {
             if let match = imageFiles.first(where: {
                 $0.deletingPathExtension().lastPathComponent.lowercased() == name
             }) {
-                return NSImage(contentsOf: match)
+                return NSImage(contentsOf: match).flatMap(downscale)
             }
         }
 
-        return imageFiles.first.flatMap { NSImage(contentsOf: $0) }
+        return imageFiles.first.flatMap { NSImage(contentsOf: $0) }.flatMap(downscale)
+    }
+
+    /// Downscale an `NSImage` so its longest side is at most
+    /// `maxArtworkDimension` points. Albums commonly embed 2000–3000 px
+    /// artwork; we display it in a 60 px thumbnail and a fit-to-window
+    /// overlay, so anything beyond ~1024 px is wasted decoded bitmap memory.
+    /// Returns the original image untouched if it's already small enough.
+    /// Always returns a non-nil result given a non-nil input.
+    private static let maxArtworkDimension: CGFloat = 1024
+
+    private static func downscale(_ image: NSImage) -> NSImage {
+        let original = image.size
+        let longest = max(original.width, original.height)
+        guard longest > maxArtworkDimension, original.width > 0, original.height > 0 else {
+            return image
+        }
+
+        let scale = maxArtworkDimension / longest
+        let newSize = NSSize(
+            width: floor(original.width * scale),
+            height: floor(original.height * scale)
+        )
+
+        let pixelW = Int(newSize.width)
+        let pixelH = Int(newSize.height)
+        guard pixelW > 0, pixelH > 0,
+              let rep = NSBitmapImageRep(
+                bitmapDataPlanes: nil,
+                pixelsWide: pixelW,
+                pixelsHigh: pixelH,
+                bitsPerSample: 8,
+                samplesPerPixel: 4,
+                hasAlpha: true,
+                isPlanar: false,
+                colorSpaceName: .deviceRGB,
+                bytesPerRow: 0,
+                bitsPerPixel: 0
+              )
+        else { return image }
+
+        rep.size = newSize
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        guard let context = NSGraphicsContext(bitmapImageRep: rep) else { return image }
+        NSGraphicsContext.current = context
+        context.imageInterpolation = .high
+        image.draw(
+            in: NSRect(origin: .zero, size: newSize),
+            from: .zero,
+            operation: .copy,
+            fraction: 1.0
+        )
+        context.flushGraphics()
+
+        let scaled = NSImage(size: newSize)
+        scaled.addRepresentation(rep)
+        return scaled
     }
 }

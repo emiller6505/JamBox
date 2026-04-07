@@ -80,6 +80,20 @@ final class MediaKeyController {
         // CombineLatest emits whenever any input changes.
         // Duration lives on the clock (see PlaybackClock doc) since it's
         // written by the same 4Hz observer that writes position.
+        //
+        // We deliberately do NOT subscribe to `clock.$position` (which fires
+        // 4× per second). MPNowPlayingInfoCenter interpolates the displayed
+        // position from MPNowPlayingInfoPropertyElapsedPlaybackTime +
+        // MPNowPlayingInfoPropertyPlaybackRate (both set in
+        // updateNowPlayingInfo()), so the widget's progress bar advances
+        // smoothly without us republishing every tick.
+        //
+        // The previous code DID subscribe to position, which meant
+        // updateNowPlayingInfo() ran 4× per second. Each call rebuilt the
+        // entire info dict (including a fresh MPMediaItemArtwork wrapping the
+        // full-resolution NSImage) and shipped it across the XPC boundary to
+        // the system Now Playing daemon, causing transient allocations of
+        // hundreds of MB during playback. See card 0005.
         Publishers.CombineLatest4(
             player.$currentTrack,
             player.$isPlaying,
@@ -90,14 +104,6 @@ final class MediaKeyController {
             self?.updateNowPlayingInfo()
         }
         .store(in: &cancellables)
-
-        // Position is updated 4× per second by the periodic time observer.
-        // Update the widget when it changes too — but the system can also
-        // interpolate from MPNowPlayingInfoPropertyElapsedPlaybackTime + the
-        // current rate, so we don't strictly need every tick.
-        player.clock.$position
-            .sink { [weak self] _ in self?.updateNowPlayingInfo() }
-            .store(in: &cancellables)
     }
 
     private func updateNowPlayingInfo() {
