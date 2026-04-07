@@ -2,14 +2,38 @@ import AppKit
 import AVFoundation
 import Combine
 
+/// High-frequency playback time state, isolated into its own ObservableObject
+/// so that 4Hz updates from the periodic time observer do NOT trigger
+/// re-renders of views that observe `PlayerEngine` itself.
+///
+/// SwiftUI subscribes to an entire ObservableObject's `objectWillChange`
+/// publisher, which fires for any `@Published` write — even ones the
+/// observing view doesn't actually read. If `playbackPosition` lived on
+/// `PlayerEngine`, every `ContentView` body re-eval would happen 4 times
+/// per second, churning the song-table `NSTableView` and racing with
+/// in-progress mouse clicks (the "every third click fails" bug, card 0002).
+///
+/// Only `NowPlayingBar` and `MediaKeyController` need these high-frequency
+/// values; both observe this clock directly via `@ObservedObject` /
+/// `$position` Combine subscription.
+@MainActor
+final class PlaybackClock: ObservableObject {
+    @Published var position: TimeInterval = 0
+    @Published var duration: TimeInterval = 0
+}
+
 @MainActor
 final class PlayerEngine: ObservableObject {
     @Published var isPlaying = false
     @Published var currentTrack: Track?
     @Published var currentArtwork: NSImage?
     @Published var tracks: [Track] = []
-    @Published var playbackPosition: TimeInterval = 0
-    @Published var playbackDuration: TimeInterval = 0
+
+    /// High-frequency playback time. See `PlaybackClock` doc above.
+    /// Exposed as `let` (non-`@Published`) so that subscribers to
+    /// `PlayerEngine` do NOT see clock ticks. Views that need the live
+    /// position observe `clock` directly.
+    let clock = PlaybackClock()
 
     private var queuePlayer = AVQueuePlayer()
     private var cancellables = Set<AnyCancellable>()
@@ -50,16 +74,19 @@ final class PlayerEngine: ObservableObject {
             queue: .main
         ) { [weak self] time in
             guard let self else { return }
-            self.playbackPosition = time.seconds.isFinite ? time.seconds : 0
+            // Writes go to the isolated clock, NOT to PlayerEngine itself,
+            // so observers of PlayerEngine (e.g. ContentView) don't re-render
+            // 4 times per second. See PlaybackClock doc.
+            self.clock.position = time.seconds.isFinite ? time.seconds : 0
 
             if let item = self.queuePlayer.currentItem {
                 let dur = item.duration.seconds
                 if dur.isFinite && dur > 0 {
-                    self.playbackDuration = dur
+                    self.clock.duration = dur
                     return
                 }
             }
-            self.playbackDuration = self.currentTrack?.duration ?? 0
+            self.clock.duration = self.currentTrack?.duration ?? 0
         }
     }
 
@@ -78,8 +105,8 @@ final class PlayerEngine: ObservableObject {
         currentIndex = nil
         currentArtwork = nil
         artworkCache.removeAll()
-        playbackPosition = 0
-        playbackDuration = 0
+        clock.position = 0
+        clock.duration = 0
     }
 
     func updateMetadata(_ enrichedTracks: [Track]) {
@@ -108,8 +135,8 @@ final class PlayerEngine: ObservableObject {
             currentTrack = nil
             currentIndex = nil
             currentArtwork = nil
-            playbackPosition = 0
-            playbackDuration = 0
+            clock.position = 0
+            clock.duration = 0
         }
 
         // Build the new track list: drop removed, add new, re-sort.
@@ -144,8 +171,8 @@ final class PlayerEngine: ObservableObject {
         }
 
         currentTrack = tracks[index]
-        playbackPosition = 0
-        playbackDuration = tracks[index].duration
+        clock.position = 0
+        clock.duration = tracks[index].duration
         loadArtwork(for: tracks[index])
         queuePlayer.play()
     }
@@ -175,8 +202,8 @@ final class PlayerEngine: ObservableObject {
 
     func seek(to fraction: Double) {
         let clamped = min(max(fraction, 0), 1)
-        let target = clamped * playbackDuration
-        guard target.isFinite, playbackDuration > 0 else { return }
+        let target = clamped * clock.duration
+        guard target.isFinite, clock.duration > 0 else { return }
 
         let cmTime = CMTime(seconds: target, preferredTimescale: 600)
         queuePlayer.seek(to: cmTime)
@@ -185,13 +212,13 @@ final class PlayerEngine: ObservableObject {
     // MARK: - Private
 
     private func handleItemChange(_ item: AVPlayerItem?) {
-        playbackPosition = 0
+        clock.position = 0
 
         guard let item = item else {
             currentTrack = nil
             currentIndex = nil
             currentArtwork = nil
-            playbackDuration = 0
+            clock.duration = 0
             return
         }
 
@@ -200,7 +227,7 @@ final class PlayerEngine: ObservableObject {
         }) {
             currentIndex = matched
             currentTrack = tracks[matched]
-            playbackDuration = tracks[matched].duration
+            clock.duration = tracks[matched].duration
             loadArtwork(for: tracks[matched])
             enqueueMoreIfNeeded()
         }

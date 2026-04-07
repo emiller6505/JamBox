@@ -131,7 +131,7 @@ struct ContentView: View {
 
             Divider()
 
-            NowPlayingBar(player: player, showArtwork: $showArtwork) { track in
+            NowPlayingBar(player: player, clock: player.clock, showArtwork: $showArtwork) { track in
                 selection = track.id
                 if let row = player.tracks.firstIndex(where: { $0.id == track.id }) {
                     scrollTargetRow = row

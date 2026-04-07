@@ -2,6 +2,12 @@ import SwiftUI
 
 struct NowPlayingBar: View {
     @ObservedObject var player: PlayerEngine
+    /// High-frequency time state lives on its own ObservableObject so that
+    /// 4Hz scrub-bar updates don't trigger re-renders of any view that
+    /// observes `player` itself (notably `ContentView`, which would otherwise
+    /// re-render its `Table` 4 times per second and race with mouse clicks —
+    /// see card 0002 and `PlaybackClock` doc in `PlayerEngine.swift`).
+    @ObservedObject var clock: PlaybackClock
     @EnvironmentObject private var themeManager: ThemeManager
     @Binding var showArtwork: Bool
 
@@ -147,7 +153,7 @@ struct NowPlayingBar: View {
     }
 
     private var rightTimestampCell: some View {
-        Text(formatTime(player.playbackDuration))
+        Text(formatTime(clock.duration))
             .font(.caption)
             .monospacedDigit()
             .foregroundStyle(themeManager.current.secondaryText ?? Color.secondary)
@@ -157,17 +163,17 @@ struct NowPlayingBar: View {
 
     /// The live playback fraction (0..1), driven by the periodic time observer.
     private var liveFraction: Double {
-        guard player.playbackDuration > 0 else { return 0 }
-        return player.playbackPosition / player.playbackDuration
+        guard clock.duration > 0 else { return 0 }
+        return clock.position / clock.duration
     }
 
     /// The time value to display in the left timestamp.
     /// Shows the scrub target during a drag, live position otherwise.
     private var displayedPosition: TimeInterval {
         if isScrubbing {
-            return scrubFraction * player.playbackDuration
+            return scrubFraction * clock.duration
         }
-        return player.playbackPosition
+        return clock.position
     }
 
     /// A binding that reads from the live position when idle,

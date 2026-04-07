@@ -62,8 +62,8 @@ final class MediaKeyController {
             else { return .commandFailed }
 
             let target = positionEvent.positionTime
-            guard self.player.playbackDuration > 0 else { return .commandFailed }
-            self.player.seek(to: target / self.player.playbackDuration)
+            guard self.player.clock.duration > 0 else { return .commandFailed }
+            self.player.seek(to: target / self.player.clock.duration)
             return .success
         }
 
@@ -78,10 +78,12 @@ final class MediaKeyController {
     private func observePlayer() {
         // Update on any change to the four properties that affect the widget.
         // CombineLatest emits whenever any input changes.
+        // Duration lives on the clock (see PlaybackClock doc) since it's
+        // written by the same 4Hz observer that writes position.
         Publishers.CombineLatest4(
             player.$currentTrack,
             player.$isPlaying,
-            player.$playbackDuration,
+            player.clock.$duration,
             player.$currentArtwork
         )
         .sink { [weak self] _, _, _, _ in
@@ -93,7 +95,7 @@ final class MediaKeyController {
         // Update the widget when it changes too — but the system can also
         // interpolate from MPNowPlayingInfoPropertyElapsedPlaybackTime + the
         // current rate, so we don't strictly need every tick.
-        player.$playbackPosition
+        player.clock.$position
             .sink { [weak self] _ in self?.updateNowPlayingInfo() }
             .store(in: &cancellables)
     }
@@ -111,8 +113,8 @@ final class MediaKeyController {
             MPMediaItemPropertyTitle: track.displayName,
             MPMediaItemPropertyArtist: track.artist,
             MPMediaItemPropertyAlbumTitle: track.album,
-            MPMediaItemPropertyPlaybackDuration: player.playbackDuration,
-            MPNowPlayingInfoPropertyElapsedPlaybackTime: player.playbackPosition,
+            MPMediaItemPropertyPlaybackDuration: player.clock.duration,
+            MPNowPlayingInfoPropertyElapsedPlaybackTime: player.clock.position,
             MPNowPlayingInfoPropertyPlaybackRate: player.isPlaying ? 1.0 : 0.0
         ]
 
