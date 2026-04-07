@@ -41,3 +41,15 @@ Three themes are available under **JamBox → Theme** in the menu bar:
 - **Candy** — vibrant pink and orange inspired by the app icon
 
 Your choice persists across launches.
+
+## Replacing the app icon
+
+Drop any square-ish image at a path of your choice and run:
+
+```
+python3 scripts/make_icon.py path/to/new_image.png
+```
+
+The script crops the white border, applies a rounded-square mask (~22% radius to match macOS), regenerates all the required pixel sizes, and rewrites `Contents.json`. Then rebuild the app.
+
+Requires Pillow: `pip3 install --user Pillow`. There's also `scripts/test_make_icon.py` which exercises the script end-to-end against a synthetic fixture.
