@@ -25,7 +25,11 @@ enum FileScanner {
             }
         }
 
-        tracks.sort { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+        tracks.sort {
+            $0.url.deletingPathExtension().lastPathComponent
+                .localizedCaseInsensitiveCompare($1.url.deletingPathExtension().lastPathComponent)
+                == .orderedAscending
+        }
         return tracks
     }
 
@@ -53,8 +57,16 @@ enum FileScanner {
                 }
             }
 
-            loaded.sort { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+            // Sort by filename so this matches scanFolder's order. This sort
+            // is largely vestigial since updateMetadata preserves the existing
+            // tracks-array order via tracks.map, but consistent ordering avoids
+            // surprises if a future caller uses the result directly.
+            loaded.sort {
+                $0.url.deletingPathExtension().lastPathComponent
+                    .localizedCaseInsensitiveCompare($1.url.deletingPathExtension().lastPathComponent)
+                    == .orderedAscending
+            }
             return loaded
-        } // withTaskGroup
+        }
     }
 }

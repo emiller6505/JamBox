@@ -7,6 +7,9 @@ struct ContentView: View {
     @State private var isLoading = false
     @State private var activeScopedURL: URL?
     @State private var showArtwork = false
+    @State private var folderWatcher = FolderWatcher()
+    @State private var rescanTask: Task<Void, Never>?
+    @State private var watchedFolderURL: URL?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -141,7 +144,8 @@ struct ContentView: View {
         panel.message = "Choose your music folder"
 
         if panel.runModal() == .OK, let url = panel.url {
-            // Release previous security-scoped access before switching
+            // Release previous security-scoped access and watcher before switching
+            folderWatcher.stop()
             activeScopedURL?.stopAccessingSecurityScopedResource()
             activeScopedURL = nil
             saveBookmark(for: url)
@@ -159,6 +163,7 @@ struct ContentView: View {
         isLoading = true
         selection = nil
         showArtwork = false
+        watchedFolderURL = url
         // Quick scan: filenames only, fast, shows list immediately
         let quickTracks = FileScanner.scanFolder(url)
         player.loadTracks(quickTracks)
@@ -169,6 +174,62 @@ struct ContentView: View {
             await MainActor.run {
                 player.updateMetadata(enriched)
                 isLoading = false
+            }
+        }
+
+        // Start watching for filesystem changes
+        folderWatcher.onChange = {
+            DispatchQueue.main.async { scheduleRescan() }
+        }
+        folderWatcher.start(watching: url)
+    }
+
+    /// Debounced rescan: cancel any pending rescan, wait 500ms, then rescan.
+    /// This coalesces bursts of FSEvents (e.g. during a multi-file copy).
+    private func scheduleRescan() {
+        rescanTask?.cancel()
+        rescanTask = Task {
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            if Task.isCancelled { return }
+            await performRescan()
+        }
+    }
+
+    /// Run a fresh scan, diff against current tracks, apply changes,
+    /// then enrich any new tracks with metadata.
+    /// Checks Task.isCancelled at every await point so a newer rescan can
+    /// preempt an in-flight one cleanly.
+    private func performRescan() async {
+        guard let url = watchedFolderURL else { return }
+        if Task.isCancelled { return }
+
+        let freshTracks = await Task.detached(priority: .utility) {
+            FileScanner.scanFolder(url)
+        }.value
+        if Task.isCancelled { return }
+
+        let currentURLs = Set(player.tracks.map { $0.url })
+        let freshURLs = Set(freshTracks.map { $0.url })
+
+        let addedURLs = freshURLs.subtracting(currentURLs)
+        let removedURLs = currentURLs.subtracting(freshURLs)
+
+        if addedURLs.isEmpty && removedURLs.isEmpty { return }
+
+        let added = freshTracks.filter { addedURLs.contains($0.url) }
+
+        if Task.isCancelled { return }
+        await MainActor.run {
+            player.applyTrackDiff(added: added, removedURLs: removedURLs)
+        }
+
+        // Enrich the newly added tracks with metadata in the background
+        if !added.isEmpty {
+            if Task.isCancelled { return }
+            let enriched = await FileScanner.loadMetadata(for: added)
+            if Task.isCancelled { return }
+            await MainActor.run {
+                player.updateMetadata(enriched)
             }
         }
     }

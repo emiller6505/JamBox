@@ -90,6 +90,47 @@ final class PlayerEngine: ObservableObject {
         }
     }
 
+    /// Apply a set of added/removed tracks without disrupting current playback.
+    /// Used by the folder watcher when files appear or disappear.
+    /// - Removed tracks are dropped from the array. If the currently playing
+    ///   track is removed, playback is paused and cleared.
+    /// - Added tracks are merged in and the list is re-sorted by filename
+    ///   (matching FileScanner.scanFolder's order).
+    /// - currentIndex is recomputed from the (still valid) currentTrack URL.
+    /// - The AVQueuePlayer's queued items are NOT touched, so audio keeps playing.
+    func applyTrackDiff(added: [Track], removedURLs: Set<URL>) {
+        let currentURL = currentTrack?.url
+
+        // If the playing track was removed, stop playback first
+        if let url = currentURL, removedURLs.contains(url) {
+            queuePlayer.removeAllItems()
+            currentTrack = nil
+            currentIndex = nil
+            currentArtwork = nil
+            playbackPosition = 0
+            playbackDuration = 0
+        }
+
+        // Build the new track list: drop removed, add new, re-sort.
+        // Sort by filename (not displayName) so the order stays consistent
+        // with FileScanner.scanFolder, which sorts before metadata is loaded.
+        // displayName changes from filename to metadata title after enrichment,
+        // so sorting by it would scramble the list every time we apply a diff.
+        var next = tracks.filter { !removedURLs.contains($0.url) }
+        next.append(contentsOf: added)
+        next.sort {
+            $0.url.deletingPathExtension().lastPathComponent
+                .localizedCaseInsensitiveCompare($1.url.deletingPathExtension().lastPathComponent)
+                == .orderedAscending
+        }
+        tracks = next
+
+        // Recompute currentIndex by URL match (if still playing something)
+        if let url = currentURL, !removedURLs.contains(url) {
+            currentIndex = tracks.firstIndex { $0.url == url }
+        }
+    }
+
     func play(startingAt index: Int) {
         guard index >= 0, index < tracks.count else { return }
         queuePlayer.removeAllItems()
