@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/icon.png" width="160" alt="JamBox icon">
+  <img src="docs/phonograph.png" width="160" alt="JamBox icon">
 </p>
 
 # JamBox
