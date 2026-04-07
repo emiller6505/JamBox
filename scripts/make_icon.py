@@ -16,7 +16,7 @@ import json
 import sys
 from pathlib import Path
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 APPICON_DIR = REPO_ROOT / "JamBox" / "Media.xcassets" / "AppIcon.appiconset"
@@ -65,9 +65,16 @@ def crop_white_border(img: Image.Image) -> Image.Image:
     return img.crop(box)
 
 
+def sharpen(img: Image.Image) -> Image.Image:
+    """Apply a mild unsharp mask. Helps when the source has been upscaled
+    or has soft anti-aliased edges."""
+    return img.filter(ImageFilter.UnsharpMask(radius=2, percent=120, threshold=3))
+
+
 def round_corners(img: Image.Image, size: int = 1024) -> Image.Image:
     """Resize to size x size and apply a rounded-square alpha mask."""
     img = img.resize((size, size), Image.LANCZOS)
+    img = sharpen(img)
     mask = Image.new("L", (size, size), 0)
     draw = ImageDraw.Draw(mask)
     radius = int(size * CORNER_RADIUS_RATIO)
