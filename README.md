@@ -38,7 +38,7 @@ Three themes are available under **JamBox → Theme** in the menu bar:
 
 - **Light** (default) — clean and minimal
 - **Dark** — VSCode-inspired dark grays with a blue accent
-- **Candy** — vibrant pink and orange inspired by the app icon
+- **Candy** — vibrant pink and orange
 
 Your choice persists across launches.
 
@@ -50,6 +50,6 @@ Drop any square-ish image at a path of your choice and run:
 python3 scripts/make_icon.py path/to/new_image.png
 ```
 
-The script crops the white border, applies a rounded-square mask (~22% radius to match macOS), regenerates all the required pixel sizes, and rewrites `Contents.json`. Then rebuild the app.
+The script crops the white border, applies an anti-aliased circular mask (assuming circular source art — for non-circular icons, see the comment in the script for how to switch back to a squircle mask), regenerates all the required pixel sizes, and rewrites `Contents.json`. Then rebuild the app.
 
 Requires Pillow: `pip3 install --user Pillow`. There's also `scripts/test_make_icon.py` which exercises the script end-to-end against a synthetic fixture.
