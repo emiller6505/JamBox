@@ -2,7 +2,7 @@
 id: 0017
 title: Extend format badge whitelist to µ-law / a-law codecs
 created: 2026-04-08
-needs_designer: true
+needs_designer: false  # whitelist extension, codec name strings only — manager downgraded 2026-04-08
 designer: null
 design_review: null
 engineer: null

@@ -2,7 +2,7 @@
 id: 0014
 title: Eliminate scrub-handle flash during resume duration-load window
 created: 2026-04-08
-needs_designer: true
+needs_designer: false  # tiny bug fix, no design space — manager downgraded 2026-04-08
 designer: null
 design_review: null
 engineer: null

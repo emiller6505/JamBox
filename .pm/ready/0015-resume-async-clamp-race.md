@@ -2,7 +2,7 @@
 id: 0015
 title: Guard async duration-clamp in resume against mid-playback yank
 created: 2026-04-08
-needs_designer: true
+needs_designer: false  # bug-fix race guard, no user-facing decision — manager downgraded 2026-04-08
 designer: null
 design_review: null
 engineer: null

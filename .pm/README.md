@@ -1,6 +1,8 @@
 # JamBox PM Board — Agent Protocol
 
-**Read this file in full before doing anything.** It is the contract every agent and the manager follow. If something here conflicts with a verbal instruction, this file wins unless the manager updates it.
+**This is the deep protocol document.** It is the contract every agent and the manager follow. If something here conflicts with a verbal instruction, this file wins unless the manager updates it.
+
+**Most agents should read `.pm/AGENT-PRIMER.md` first**, not this file. The primer is a tight ~150-line summary covering role-specific workflows, the §7 invariants, and pointers into this document for clarification. Read this README in full only when you need to look up something the primer doesn't cover.
 
 ---
 
