@@ -220,7 +220,5 @@ Independent audit by qa-11 on 2026-04-08. Read `## Plan`, then read `ContentView
 All twelve acceptance bullets pass by code inspection, all applicable invariants pass, and the build is green. The one deferred item is the audible gapless check at a track boundary, which the engineer's self-audit and this QA both confirmed is correct by code path (the currently-playing `queuePlayer.items()[0]` is never touched; only tail items are pruned and the lookahead is refilled via the existing `enqueueMoreIfNeeded` which uses `Self.assetOptions` with `AVURLAssetPreferPreciseDurationAndTimingKey`). The manager/user should do one by-ear test at a track boundary before shipping, but no code changes are needed. The nits above are not worth a kickback or a child card.
 
 ## Manager Decision
-*Filled in by the manager when closing or kicking back.*
 
-## Manager Decision
-*Filled in by the manager when closing or kicking back.*
+2026-04-08 — APPROVE. QA-11 audit passed all acceptance bullets and applicable invariants; build green; no blockers, no major findings. Closing to done/. Final by-ear gapless check happens during user manual validation of the Release build.
