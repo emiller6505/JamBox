@@ -4,7 +4,7 @@ title: Format/sample-rate/bit-depth badge in NowPlayingBar + UX pass
 created: 2026-04-08
 needs_designer: true
 designer: designer-13
-design_review: null
+design_review: designer-13-review
 engineer: engineer-13
 qa: qa-13
 parent: null
@@ -357,6 +357,7 @@ Acceptance list is **unchanged**. No edits to frontmatter.
 - 2026-04-08 — engineer-13 implementation complete: AudioFormat struct + @Published currentFormat on PlayerEngine (not PlaybackClock), loadFormat mirrors loadArtwork identity-check pattern, readAudioFormat via CMAudioFormatDescription → ASBD with mFormatID whitelist (WAV/AIFF disambiguated by URL extension only — the one and only extension lookup), NowPlayingBar metadata VStack gains fourth waveform line and all existing text lines get the designer's fixed-pt font bump (15/13/13/11/12). Track.swift not touched (format is per-current-item transient, §7.3); dropped from touches:. xcodebuild BUILD SUCCEEDED, no new warnings. Self-audit complete.
 - 2026-04-08 — qa-13 picked up card, starting §6b independent audit
 - 2026-04-08 — qa-13 audit complete. Acceptance 12/12 PASS, invariants all PASS, build SUCCEEDED on MacOSX26.4.sdk. `kAudioFormatMPEG4AAC_Spatial` investigated against the SDK header — it is a plain `CF_ENUM` enumerator with no `API_AVAILABLE` attribute, so it compiles to an integer constant with no runtime availability check and is safe at the macos14.0 deployment target. No BLOCKER/MAJOR findings. Recommendation: APPROVE. Card stays in qa/ for post-QA design review.
+- 2026-04-08 — designer-13-review picked up for post-QA design review (§6c); reading original risks, plan, self-audit, QA report, and diff
 
 ## Self-Audit
 
