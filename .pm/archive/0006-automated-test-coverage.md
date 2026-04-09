@@ -193,4 +193,12 @@ This card is in `backlog/`. It does not have any hard file collisions with cards
 ### Recommendation
 
 ## Manager Decision
-*Filled in by the manager when closing or kicking back.*
+
+2026-04-08 — SPLIT. Card 0006 was always too large to dispatch as one unit (the card itself recommended splitting in its "Manager dispatch note"). After cards 0020 and 0021 demonstrated the cost of shipping audio code without real-file fixtures, the manager finalized the split into four sub-cards and dispatched 0006a first. Sub-cards:
+
+- **0006a** (ready/, dispatched 2026-04-08) — Test infrastructure: target, fixtures (incl. mandatory 24-bit FLAC), Layer 1 static checks (AVURLAsset grep, sandbox bookmark balance, PlayerEngine @Published allowlist, single-construction-site rule).
+- **0006b** (backlog/, depends on 0006a) — Layer 2 unit tests against Track, FileScanner, ThemeManager, formatters.
+- **0006c** (backlog/, depends on 0006a) — Layer 3a integration tests against PlayerEngine using real fixture audio. Includes regression tests for cards 0012 and 0020.
+- **0006d** (backlog/, depends on 0006a) — Layer 3b XCUITest user-flow tests. Includes the post-resume spacebar regression test for card 0021.
+
+This card archived as the parent of the four. Manager dispatches 0006b/c/d sequentially after each prior card closes. Engineer for 0006a may optionally start sketching 0006b in parallel if blocked, but should not commit code outside 0006a's scope.

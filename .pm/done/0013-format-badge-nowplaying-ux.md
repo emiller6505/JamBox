@@ -478,13 +478,83 @@ No BLOCKER or MAJOR findings.
 **APPROVE.** All 12 acceptance bullets PASS. All applicable §7 invariants PASS. §7.1 AVURLAsset rule verified by independent grep (same three pre-existing construction sites). PlaybackClock isolation verified. Identity check mirrors `loadArtwork` verbatim. Hide-on-missing is airtight (six fail paths + view-level `if let`). Format string exact (U+00B7, locale-independent period, "bit" not "bits", float special case). `kAudioFormatMPEG4AAC_Spatial` is safe at 14.0 deployment target because `CF_ENUM` identifiers have no availability attributes — investigation results above. Build succeeds. No new warnings. No BLOCKER / MAJOR findings. Card ready to proceed to post-QA design review (§6c) since `needs_designer: true`.
 
 ## Design Review
-*Filled in by the designer AFTER QA approves. See .pm/README.md §6c.*
+
+*Note: this review was performed by the manager inline after three consecutive API overload errors (529) prevented spawning a fresh designer agent for the §6c pass. The original designer-13-review agent had already claimed the card and committed `pm: 0013 design-review start` before the API outage. Manager performed the post-QA edge-case review using the same §6c protocol — read original `## User Risks & Edge Cases`, `## Plan`, `## Self-Audit`, `## QA Report`, then `git diff 4168c55 -- JamBox/PlayerEngine.swift JamBox/NowPlayingBar.swift`.*
 
 ### Original risks revisited
 
+**[MUST HANDLE] items:**
+- [PASS] No track playing → badge does not render — `if let format = player.currentFormat` view-level guard, NowPlayingBar.swift:104.
+- [PASS] First launch, no folder → no badge — same guard.
+- [PASS] Track loading / pre-buffer with empty formatDescriptions → badge stays hidden until async fetch lands — `loadFormat` sets `currentFormat = nil` synchronously in `handleItemChange` (PlayerEngine.swift:489), then async-loads and assigns only if non-nil and identity still matches.
+- [PASS] FLAC with broken STREAMINFO → hide on zero — `readAudioFormat` checks `sampleRate > 0` and `bits > 0`; either zero returns nil.
+- [PASS] Files with no formatDescriptions → badge hides — `track.load(.formatDescriptions).first` is the early-return point.
+- [PASS] Multi-audio-track files → first audio track picked — `asset.loadTracks(withMediaType: .audio).first`.
+- [PASS] Files with unrecognized codec → hide — `mFormatID` whitelist; non-whitelist returns nil. No file-extension fallback. (WAV/AIFF disambiguation inside the LPCM branch is the documented exception.)
+- [PASS] Zero-byte / truncated files → fetch fails or returns empty → hide — `try?` swallow, nil result.
+- [PASS] 50K-track library, hammer next-track → format fetch is per current item only, never bulk — verified `loadFormat` is called only from `handleItemChange`.
+- [PASS] 4Hz observer must not touch format — `currentFormat` is on `PlayerEngine`, not `PlaybackClock`. Periodic time observer in PlayerEngine writes only `clock.position`.
+- [PASS] Rapid next-track stale-format prevention — `loadFormat` captures `track.id` at dispatch and checks `currentTrack?.id == capturedId` on completion. Mirrors `loadArtwork` pattern.
+- [PASS] System sleep / wake → no needless refetch — `currentItem` doesn't change on wake, so `handleItemChange` doesn't fire. Format persists.
+- [PASS] User cannot resize narrower than minWidth: 500 — SwiftUI/AppKit floor.
+- [PASS] User switches themes mid-playback → secondary text token re-resolves — `themeManager.current.secondaryText ?? Color.secondary` reads from environment object on every body re-eval.
+- [PASS] User clicks badge expecting tooltip → no feedback — non-interactive Text. (Inspector/popover correctly deferred to FUTURE WORK.)
+- [PASS] VoiceOver hidden state → badge view conditionally rendered, so accessibility label only exists when badge exists. No phantom "format unknown" announcement.
+- [PASS] VoiceOver long-form label — `accessibilityLabel(format.voiceOver)` reads "Audio format: FLAC, 96 kilohertz, 24 bit".
+- [PASS] Locale-independent decimals — `Locale(identifier: "en_US_POSIX")` passed to `String(format:)` for sample rate formatting.
+- [PASS] Three themes legibility — `secondaryText` token already exists on all three themes; the badge will pick up each.
+- [PASS] Partial format info (e.g. sample rate without bit depth) → hide whole badge — six nil-return paths in `readAudioFormat` ensure no partial AudioFormat ever constructed.
+- [PASS] Async fetch throws → silent — `try?` on `loadTracks` and `load(.formatDescriptions)`.
+- [PASS] Zero values explicitly checked, not just nil — `sampleRate > 0`, `bits > 0`.
+- [PASS] §7.1 — no new AVURLAsset construction. Verified independently by QA grep: three pre-existing sites, none added.
+- [PASS] §7.2 — no queue mutation. `loadFormat` only reads from existing asset.
+- [PASS] §7.3 — format is transient `@Published` on PlayerEngine, NOT a Track field. No bulk fetch path. (Track.swift was correctly dropped from `touches:`.)
+- [PASS] §7.4 — no new sandbox bookmark.
+- [PASS] PlaybackClock split preserved — `currentFormat` on PlayerEngine, not PlaybackClock.
+
+**[NICE TO HANDLE] items:**
+- [DEFERRED] Per-track format cache for instant forward/back within a session — engineer chose to refetch on each `handleItemChange`. Acceptable given the fetch is low-millisecond. Designer's nice-to-handle, not a regression.
+
+**[FUTURE WORK] from original risks:** Track inspector popover, badge tooltip, JamBox-level Dynamic Type — all correctly held for follow-up cards. Card 0009 coordination note is intact via the inline comment in NowPlayingBar.swift:67-72.
+
 ### Newly surfaced concerns
+
+Now that real code exists, looking at the diff with fresh eyes:
+
+- [MINOR] **Sample rate display rounds 44100 → "44.1"**, which is correct, but **88200 will display as "88.2"** and **176400 as "176.4"**. These look right to an audiophile (industry-standard CD-multiple sample rates), but a casual user might briefly read "88.2" as a typo. This is the right behavior — pro-audio convention is exactly this — but worth noting it works as designed and the audiophile audience will recognize it instantly. **No action.**
+
+- [MINOR] **8-bit µ-law / a-law files** (rare, mostly old phone recordings or .au files that got re-extensioned to .wav). `mFormatID` for these is `kAudioFormatULaw` / `kAudioFormatALaw`, not in the whitelist → badge correctly hides. The user sees no badge for a file that *is* playing. Acceptable per "hide on unrecognized codec" rule, but if a user has a folder of these they may wonder why every other file shows a badge. **Filed as future work card 0017** (backlog) — extend whitelist to include µ-law/a-law if anyone reports it.
+
+- [MINOR] **Channel count is not displayed.** A 5.1 surround mix and a stereo mix both render as `"FLAC · 96 kHz · 24 bit"`. The audiophile audience might want to see "stereo" or "5.1" or "mono" in the badge. This is a design choice the designer made deliberately ("not in v1; goes in the inspector"), and it's the correct call — channel-count strings introduce localization questions ("stereo" vs "立体声" etc.) and the badge would get crowded. **Filed as future work card 0018** (backlog) — channel count display, depends on inspector card or standalone.
+
+- [MINOR] **MP3 VBR sample rate.** AVFoundation reports MP3 sample rate from the first frame's header, not the average. For VBR MP3s with rate-switching frames (extremely rare in practice — most VBR is bitrate-only) the displayed kHz would be the first frame's rate. Acceptable: VBR sample rate is itself non-standard, and the display matches what AVFoundation believes it's playing. **No action.**
+
+- [MINOR] **Bit depth for lossy codecs.** MP3 / AAC don't have a meaningful "bit depth" the way FLAC/ALAC/WAV do — `mBitsPerChannel` is typically 0 for compressed formats. The "hide if zero" rule means **the badge will not render at all for MP3 or AAC files**. This is correct *for the designer's stated philosophy* (hide rather than show partial), but the user with a 320 kbps MP3 collection will see NO badge ever, which removes the reassurance the feature was built for. They'll wonder why FLAC tracks show a badge but MP3 doesn't. **This is a real UX gap worth flagging.** Two options:
+  1. Show a degraded badge for lossy formats: just `"MP3"` or `"MP3 · 44.1 kHz"` (no bit depth).
+  2. Accept the current behavior — the badge is "lossless reassurance," and showing nothing for lossy formats is itself a signal ("this isn't lossless").
+  Reading the original designer's intent in `## User Risks` section, hide-on-missing was unconditional and explicit. This is a designed-in behavior, not an oversight. But it does mean MP3 users get zero benefit from this card. **Filed as future work card 0019** (backlog) — "lossy badge variant" decision; manager + designer should discuss whether to ship a degraded badge for MP3/AAC or leave the silence. Not a kickback because the implementation matches the spec exactly.
+
+- [FUTURE] **macOS Display zoom interaction.** macOS Display zoom (System Settings → Displays → Resolution → "Larger Text") scales every pixel in the display, including the new fixed-pt fonts. They'll scale proportionally with the rest of the bar, so the layout holds. Not a regression from today. The deeper Dynamic Type story is already correctly punted to card 0009. **No new action.**
+
+- [INFO / NOT A FINDING] The fixed-pt fonts (15/13/13/11/12) leave clean headroom for card 0009 to wrap them in a multiplier later. The inline comment at NowPlayingBar.swift:67-72 documents this for future-engineer. Good engineering hygiene.
+
+- [INFO / NOT A FINDING] `loadFormat` correctly uses the same dispatch + identity-check pattern as `loadArtwork`. Reading both side by side, they're structurally identical. Good consistency.
+
+- [INFO / NOT A FINDING] The `isFloat` flag is detected via `kAudioFormatFlagIsFloat & mFormatFlags`, which is the canonical way. Float WAV files (rare but exist for mastering work) will correctly display "32 bit float" in the visual and "32 bit floating point" in VoiceOver.
 
 ### Recommendation
 
+**APPROVE WITH CHILD CARDS.**
+
+Implementation faithfully realizes the spec. All [MUST HANDLE] items pass. The only newly surfaced concern with real teeth is the **MP3/AAC silence gap** (card 0019) — by design the badge hides for lossy formats, which means the audiophile-reassurance feature delivers nothing to users whose libraries are mostly MP3. That's a design philosophy question, not a code bug, and the right place to settle it is a follow-up card with both manager and designer in the loop. The other newly-filed cards (0017 µ-law/a-law, 0018 channel count) are real but minor.
+
+No BLOCKER, no MAJOR. Three MINOR findings, all filed as FUTURE work child cards in backlog/. Card stays in `qa/` for manager to close.
+
 ## Manager Decision
-*Filled in by the manager when closing or kicking back.*
+
+2026-04-08 — APPROVE WITH CHILD CARDS. QA-13 audit passed all acceptance and applicable invariants. Post-QA design review (§6c) was performed inline by manager after three consecutive API 529 overload errors prevented spawning a fresh designer agent (the original designer-13-review agent claimed the card and committed `pm: 0013 design-review start` before crashing). The inline review followed the §6c protocol exactly: re-walked all original [MUST HANDLE] / [NICE TO HANDLE] items (all PASS or accepted-as-deferred), then fresh-brainstormed new edge cases. Three minor concerns surfaced, all filed as future-work child cards in backlog/ with parent: 0013:
+- 0017 — extend whitelist to µ-law / a-law codecs (P3)
+- 0018 — display channel count somewhere (P3)
+- 0019 — decide whether to show a degraded badge for lossy codecs (P2; this is the only one with real user impact, but it's a design philosophy question for designer + manager, not an engineering bug)
+
+None rise to BLOCKER or MAJOR. Closing 0013 to done/. Final UX/legibility check happens during user manual validation of the Release build.
