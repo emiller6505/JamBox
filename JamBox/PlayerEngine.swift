@@ -120,6 +120,57 @@ final class PlayerEngine: ObservableObject {
         clock.duration = 0
     }
 
+    /// Reorder `tracks` to match `newOrder` without disrupting playback.
+    /// Caller guarantees `newOrder` is a permutation of the current `tracks`
+    /// (same set of URLs, just in a different order). Used by the column-sort
+    /// feature (card 0011): sorting drives the playback queue, so the visible
+    /// sort order must match `player.tracks` itself.
+    ///
+    /// Behavior:
+    /// - No-op if `newOrder` already matches `tracks` by id sequence.
+    /// - `tracks` is reassigned to `newOrder`.
+    /// - `currentIndex` is recomputed by URL match (mirrors `updateMetadata`
+    ///   and `applyTrackDiff`), so the currently-playing track's index moves
+    ///   with it.
+    /// - The AVQueuePlayer's currently-playing item (index 0 in `items()`) is
+    ///   left untouched. Any already-enqueued lookahead items AFTER it are
+    ///   removed, then `enqueueMoreIfNeeded()` refills from the new position.
+    ///   This preserves gapless playback of the current track while ensuring
+    ///   the next-up track reflects the new sort order.
+    func reorderTracks(to newOrder: [Track]) {
+        // No-op guard: avoid an infinite loop when a SwiftUI .onChange
+        // observer calls us with the same sequence we already have.
+        if newOrder.count == tracks.count,
+           zip(newOrder, tracks).allSatisfy({ $0.id == $1.id }) {
+            return
+        }
+
+        let currentURL = currentTrack?.url
+        tracks = newOrder
+
+        guard let url = currentURL,
+              let newIndex = tracks.firstIndex(where: { $0.url == url }) else {
+            // Nothing playing — nothing more to do. No queue items to prune.
+            return
+        }
+
+        currentIndex = newIndex
+
+        // Prune stale lookahead items (everything after the currently-playing
+        // item). `items()` returns the queue in play order with the current
+        // item at index 0. Removing items beyond index 0 does not interrupt
+        // the current item per AVQueuePlayer semantics.
+        let queued = queuePlayer.items()
+        if queued.count > 1 {
+            for stale in queued.dropFirst() {
+                queuePlayer.remove(stale)
+            }
+        }
+
+        // Refill the lookahead from the new index + 1.
+        enqueueMoreIfNeeded()
+    }
+
     func updateMetadata(_ enrichedTracks: [Track]) {
         let lookup = Dictionary(enrichedTracks.map { ($0.id, $0) }, uniquingKeysWith: { _, b in b })
         tracks = tracks.map { lookup[$0.id] ?? $0 }

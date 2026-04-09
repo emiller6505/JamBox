@@ -1,5 +1,107 @@
 import SwiftUI
 
+// MARK: - Column sort (card 0011)
+
+/// The four user-sortable columns. Leading speaker-icon and "#" columns are
+/// intentionally not sortable. `rawValue` is what's persisted to UserDefaults.
+private enum SortColumn: String {
+    case title, artist, album, duration
+}
+
+/// Custom `SortComparator` used with SwiftUI `Table`'s native `sortOrder`
+/// binding. Carrying the column identity on the comparator itself lets us
+/// (a) get the Table's free column-header-click + sort-direction indicator
+/// and (b) implement the iTunes multi-key rules ("preserve album order when
+/// sorting by artist", etc.) that a plain `KeyPathComparator` cannot express.
+///
+/// Direction toggle only flips the primary axis of each column's rules:
+/// secondary (album) and tertiary (trackNumber) keys always sort ascending.
+private struct TrackComparator: SortComparator, Equatable, Hashable {
+    var column: SortColumn
+    var order: SortOrder = .forward
+
+    func compare(_ lhs: Track, _ rhs: Track) -> ComparisonResult {
+        let result: ComparisonResult
+        switch column {
+        case .title:
+            result = lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName)
+        case .artist:
+            // Primary: artist (direction-flippable).
+            let primary = lhs.artist.localizedCaseInsensitiveCompare(rhs.artist)
+            if primary != .orderedSame {
+                // Apply direction only to the primary axis.
+                return (order == .forward) ? primary : primary.reversed
+            }
+            // Same artist: preserve album-then-track order (always ascending).
+            return Self.albumThenTrackCompare(lhs, rhs)
+        case .album:
+            // Primary: album (direction-flippable).
+            let primary = lhs.album.localizedCaseInsensitiveCompare(rhs.album)
+            if primary != .orderedSame {
+                return (order == .forward) ? primary : primary.reversed
+            }
+            // Same album: always track-number ascending.
+            return Self.trackNumberThenFilenameCompare(lhs, rhs)
+        case .duration:
+            if lhs.duration < rhs.duration {
+                result = .orderedAscending
+            } else if lhs.duration > rhs.duration {
+                result = .orderedDescending
+            } else {
+                // Stable tiebreaker by filename (ascending).
+                result = Self.filenameCompare(lhs, rhs)
+            }
+        }
+        // title and duration: straightforward direction flip with filename
+        // tiebreaker baked into the duration case above.
+        return (order == .forward) ? result : result.reversed
+    }
+
+    /// Secondary sort used under an artist group: album ascending (case-insensitive),
+    /// then track number ascending (nil last), then filename ascending for stability.
+    private static func albumThenTrackCompare(_ lhs: Track, _ rhs: Track) -> ComparisonResult {
+        let byAlbum = lhs.album.localizedCaseInsensitiveCompare(rhs.album)
+        if byAlbum != .orderedSame { return byAlbum }
+        return trackNumberThenFilenameCompare(lhs, rhs)
+    }
+
+    /// Track-number ascending with nil last, then filename ascending.
+    private static func trackNumberThenFilenameCompare(_ lhs: Track, _ rhs: Track) -> ComparisonResult {
+        switch (lhs.trackNumber, rhs.trackNumber) {
+        case let (l?, r?):
+            if l < r { return .orderedAscending }
+            if l > r { return .orderedDescending }
+        case (nil, _?):
+            return .orderedDescending // nil sorts last under ascending
+        case (_?, nil):
+            return .orderedAscending
+        case (nil, nil):
+            break
+        }
+        return filenameCompare(lhs, rhs)
+    }
+
+    private static func filenameCompare(_ lhs: Track, _ rhs: Track) -> ComparisonResult {
+        lhs.url.lastPathComponent.localizedCaseInsensitiveCompare(rhs.url.lastPathComponent)
+    }
+}
+
+private extension ComparisonResult {
+    var reversed: ComparisonResult {
+        switch self {
+        case .orderedAscending: return .orderedDescending
+        case .orderedDescending: return .orderedAscending
+        case .orderedSame: return .orderedSame
+        }
+    }
+}
+
+/// UserDefaults keys for sort persistence (card 0011).
+private enum SortDefaults {
+    static let columnKey = "jambox.sort.column"
+    static let directionKey = "jambox.sort.direction"
+}
+
 struct ContentView: View {
     @EnvironmentObject private var appModel: AppModel
     @EnvironmentObject private var player: PlayerEngine
@@ -11,15 +113,32 @@ struct ContentView: View {
     @State private var searchQuery: String = ""
     @FocusState private var searchFieldFocused: Bool
 
-    /// Tracks visible after applying the search query. Filter is a
-    /// case-insensitive substring match across title (displayName),
+    /// Active sort comparators for the Table's native `sortOrder` binding.
+    /// Empty array = no sort (file order from FileScanner). On first launch
+    /// with no saved state, this stays empty. Restored from UserDefaults in
+    /// `.onAppear`. See card 0011.
+    @State private var sortOrder: [TrackComparator] = []
+
+    /// `player.tracks` after the current sort has been applied. This is the
+    /// canonical sorted order that gets handed to `player.reorderTracks` so
+    /// the playback queue matches the display. When `sortOrder` is empty,
+    /// this is just `player.tracks` unchanged.
+    private var sortedBase: [Track] {
+        guard !sortOrder.isEmpty else { return player.tracks }
+        return player.tracks.sorted(using: sortOrder)
+    }
+
+    /// Tracks visible after applying sort and then the search query. Filter
+    /// is a case-insensitive substring match across title (displayName),
     /// artist, and album. Empty / whitespace query is a no-op.
-    /// Important: this is for *display only*. `player.tracks` and the
-    /// playback queue are never mutated by search.
+    /// Important: the filter itself is display-only; the playback queue is
+    /// driven by `player.tracks` (which is kept in `sortedBase` order via
+    /// `player.reorderTracks`).
     private var filteredTracks: [Track] {
+        let base = sortedBase
         let q = searchQuery.trimmingCharacters(in: .whitespaces).lowercased()
-        guard !q.isEmpty else { return player.tracks }
-        return player.tracks.filter { track in
+        guard !q.isEmpty else { return base }
+        return base.filter { track in
             track.displayName.lowercased().contains(q)
                 || track.artist.lowercased().contains(q)
                 || track.album.lowercased().contains(q)
@@ -77,7 +196,10 @@ struct ContentView: View {
                         Spacer()
                     }
                 } else {
-                    Table(filteredTracks, selection: $selection) {
+                    Table(filteredTracks, selection: $selection, sortOrder: $sortOrder) {
+                        // Speaker icon and track-number columns are intentionally
+                        // non-sortable per acceptance. They use the value-less
+                        // TableColumn initializer so no sort affordance appears.
                         TableColumn("") { (track: Track) in
                             cell {
                                 if track.id == player.currentTrack?.id {
@@ -96,28 +218,34 @@ struct ContentView: View {
                         }
                         .width(min: 30, ideal: 35, max: 50)
 
-                        TableColumn("Title") { (track: Track) in
+                        // Sortable columns use the (title, value:content:)
+                        // initializer so SwiftUI wires the header click and
+                        // sort-direction indicator automatically. The `value:`
+                        // argument is a TrackComparator carrying our column tag;
+                        // the Table sorts `filteredTracks` via this comparator
+                        // and publishes the new sortOrder through the binding.
+                        TableColumn("Title", sortUsing: TrackComparator(column: .title)) { (track: Track) in
                             cell {
                                 Text(track.displayName)
                             }
                         }
                         .width(min: 100, ideal: 250)
 
-                        TableColumn("Artist") { (track: Track) in
+                        TableColumn("Artist", sortUsing: TrackComparator(column: .artist)) { (track: Track) in
                             cell {
                                 Text(track.artist)
                             }
                         }
                         .width(min: 80, ideal: 180)
 
-                        TableColumn("Album") { (track: Track) in
+                        TableColumn("Album", sortUsing: TrackComparator(column: .album)) { (track: Track) in
                             cell {
                                 Text(track.album)
                             }
                         }
                         .width(min: 80, ideal: 180)
 
-                        TableColumn("Duration") { (track: Track) in
+                        TableColumn("Duration", sortUsing: TrackComparator(column: .duration)) { (track: Track) in
                             cell {
                                 Text(track.durationString)
                                     .monospacedDigit()
@@ -213,6 +341,41 @@ struct ContentView: View {
         .onChange(of: player.currentArtwork == nil) { _, isNil in
             if isNil { showArtwork = false }
         }
+        .onAppear {
+            // Restore persisted sort (card 0011). If none saved, stays empty
+            // and the table shows file order — matches pre-0011 behavior.
+            if sortOrder.isEmpty, let restored = Self.loadPersistedSort() {
+                sortOrder = [restored]
+                // If tracks are already loaded (e.g. folder restored from
+                // bookmark before the view appeared), apply the sort to the
+                // player immediately so the queue matches the display.
+                if !player.tracks.isEmpty {
+                    player.reorderTracks(to: player.tracks.sorted(using: sortOrder))
+                }
+            }
+        }
+        .onChange(of: sortOrder) { _, newOrder in
+            // User clicked a column header (or we restored state). Persist
+            // the new selection and drive the player queue to match the
+            // visible order. When `newOrder` is empty (edge case — SwiftUI
+            // doesn't currently clear it via clicks, but be defensive) we
+            // clear persisted state and leave player.tracks untouched.
+            if let first = newOrder.first {
+                Self.persistSort(first)
+                player.reorderTracks(to: player.tracks.sorted(using: newOrder))
+            } else {
+                Self.clearPersistedSort()
+            }
+        }
+        .onChange(of: player.tracks) { _, _ in
+            // Metadata enrichment (two-phase loading) and folder-watcher
+            // diffs mutate `player.tracks` in place. Re-apply the current
+            // sort so the display and queue stay consistent. `reorderTracks`
+            // is a no-op when the id sequence already matches, which breaks
+            // the observer loop it would otherwise cause.
+            guard !sortOrder.isEmpty else { return }
+            player.reorderTracks(to: player.tracks.sorted(using: sortOrder))
+        }
         .onKeyPress(.space) {
             // Don't hijack spacebar while the user is typing in the search
             // field — they're trying to type a literal space, not toggle
@@ -244,5 +407,37 @@ struct ContentView: View {
     private func cell<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         content()
             .foregroundStyle(themeManager.current.primaryText)
+    }
+
+    // MARK: - Sort persistence (card 0011)
+
+    /// Load the persisted column + direction from UserDefaults.
+    /// Returns `nil` when no valid state is stored — first launch, or after
+    /// `clearPersistedSort()`. Invalid / unknown values are treated as nil.
+    private static func loadPersistedSort() -> TrackComparator? {
+        let defaults = UserDefaults.standard
+        guard let raw = defaults.string(forKey: SortDefaults.columnKey),
+              let column = SortColumn(rawValue: raw) else {
+            return nil
+        }
+        let dirRaw = defaults.string(forKey: SortDefaults.directionKey) ?? "asc"
+        let order: SortOrder = (dirRaw == "desc") ? .reverse : .forward
+        return TrackComparator(column: column, order: order)
+    }
+
+    /// Persist the primary comparator. Only the first entry of the
+    /// sortOrder binding is stored — the Table's sortOrder is a single-key
+    /// array in practice.
+    private static func persistSort(_ comparator: TrackComparator) {
+        let defaults = UserDefaults.standard
+        defaults.set(comparator.column.rawValue, forKey: SortDefaults.columnKey)
+        defaults.set(comparator.order == .reverse ? "desc" : "asc",
+                     forKey: SortDefaults.directionKey)
+    }
+
+    private static func clearPersistedSort() {
+        let defaults = UserDefaults.standard
+        defaults.removeObject(forKey: SortDefaults.columnKey)
+        defaults.removeObject(forKey: SortDefaults.directionKey)
     }
 }

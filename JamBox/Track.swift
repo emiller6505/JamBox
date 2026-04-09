@@ -1,7 +1,7 @@
 import AVFoundation
 import Foundation
 
-struct Track: Identifiable {
+struct Track: Identifiable, Equatable {
     let id: URL
     let url: URL
     let displayName: String
