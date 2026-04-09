@@ -20,6 +20,21 @@ import XCTest
 @MainActor
 final class PlayerEngineIntegrationTests: XCTestCase {
 
+    /// Engine ivar so `tearDown` can explicitly clear playback and release
+    /// the instance, dropping its KVO observers and Combine cancellables
+    /// before the next test runs. Without this, a stale engine from a
+    /// previous test could still be emitting on its `clock.$duration`
+    /// publisher while a newly-observed engine (e.g. in
+    /// `AppModelResumeIntegrationTests`) was waiting for its own settled
+    /// state. (Kickback fix for 0006c — suite-order flakiness.)
+    private var engine: PlayerEngine?
+
+    override func tearDown() {
+        engine?.clearPlayback()
+        engine = nil
+        super.tearDown()
+    }
+
     // MARK: - Helpers
 
     /// Build a `Track` array from fixture (name, ext) pairs. Uses the
@@ -81,6 +96,7 @@ final class PlayerEngineIntegrationTests: XCTestCase {
     /// `clock.duration` becomes > 0.
     func testPlayStartsPlaybackWithinTimeout() {
         let engine = PlayerEngine()
+        self.engine = engine
         engine.loadTracks(tracks([("tone", "wav")]))
         XCTAssertEqual(engine.tracks.count, 1)
 
@@ -102,6 +118,7 @@ final class PlayerEngineIntegrationTests: XCTestCase {
     /// `queuedItemCount` should be exactly 3 (the lookahead).
     func testGaplessLookaheadEqualsThree() {
         let engine = PlayerEngine()
+        self.engine = engine
         engine.loadTracks(tracks([
             ("tone", "wav"),
             ("tone", "aiff"),
@@ -126,6 +143,7 @@ final class PlayerEngineIntegrationTests: XCTestCase {
     /// 1-second WAV, wait, and verify `currentTrack` flips to the next.
     func testNaturalAdvanceAcrossTracks() {
         let engine = PlayerEngine()
+        self.engine = engine
         let t = tracks([("tone", "wav"), ("tone", "aiff")])
         engine.loadTracks(t)
         let firstURL = t[0].url
@@ -150,6 +168,7 @@ final class PlayerEngineIntegrationTests: XCTestCase {
     /// Acceptance 4: pause/resume preserves position within 0.1s.
     func testPauseResumePreservesPosition() {
         let engine = PlayerEngine()
+        self.engine = engine
         engine.loadTracks(tracks([("tone", "wav")]))
         engine.play(startingAt: 0)
 
@@ -180,6 +199,7 @@ final class PlayerEngineIntegrationTests: XCTestCase {
     /// 1s tone should land the clock near 0.5s.
     func testSeekUpdatesClockPosition() {
         let engine = PlayerEngine()
+        self.engine = engine
         engine.loadTracks(tracks([("tone", "wav")]))
         engine.play(startingAt: 0)
 
@@ -203,6 +223,7 @@ final class PlayerEngineIntegrationTests: XCTestCase {
     /// FLAC files whose STREAMINFO header is inaccurate.
     func testFLACDurationMatchesActual() {
         let engine = PlayerEngine()
+        self.engine = engine
         engine.loadTracks(tracks([("tone-24", "flac")]))
         engine.play(startingAt: 0)
 
@@ -224,6 +245,7 @@ final class PlayerEngineIntegrationTests: XCTestCase {
     /// `currentFormat` would either be nil or have bitDepth != 24.
     func testFLACBitDepthFallback() {
         let engine = PlayerEngine()
+        self.engine = engine
         engine.loadTracks(tracks([("tone-24", "flac")]))
         engine.play(startingAt: 0)
 
