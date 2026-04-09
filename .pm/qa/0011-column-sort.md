@@ -5,7 +5,7 @@ created: 2026-04-08
 needs_design: false
 designer: null
 engineer: engineer-11
-qa: null
+qa: qa-11
 parent: null
 priority: P2
 estimate: M
@@ -108,6 +108,7 @@ Sort is a property of `ContentView`'s view state, driven by SwiftUI `Table`'s na
 - 2026-04-08 — engineer-11 claimed, moved to in-progress/
 - 2026-04-08 — engineer-11 plan ready (custom TrackComparator SortComparator, player.reorderTracks)
 - 2026-04-08 — engineer-11 implementation complete, build green, self-audit written, → qa
+- 2026-04-08 — qa-11 claimed, beginning independent audit
 
 ## Self-Audit
 
