@@ -3,7 +3,7 @@ id: 0012
 title: Resume playback position on launch
 created: 2026-04-08
 needs_designer: true
-designer: null
+designer: designer-12
 design_review: null
 engineer: null
 qa: null
@@ -61,6 +61,7 @@ This card is a sibling to card 0013 (format badge + NowPlayingBar UX pass). Both
 
 ## Log
 - 2026-04-08 — manager card created in ready/, sibling to 0013, will dispatch designer next
+- 2026-04-08 — designer-12 claimed card, moved ready/ → design/
 
 ## Self-Audit
 *Filled in by the engineer before handing off to QA. See .pm/README.md §6.*
