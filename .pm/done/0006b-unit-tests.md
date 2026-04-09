@@ -212,3 +212,5 @@ Executed 34 tests, with 0 failures (0 unexpected) in 0.315 (0.327) seconds
 - APPROVE. 34/34 tests pass, build green, no production code touched, all three card-specific caveats triaged as NIT per the dispatch instructions. The Vorbis-from-FLAC regression test is genuinely valuable and correctly asserts the fallback path. Card stays in `qa/` per approval protocol.
 
 ## Manager Decision
+
+2026-04-08 — APPROVE. QA-06b audit passed all 13 acceptance bullets and all applicable invariants (most are N/A for unit-test work). 34/34 tests passing in 0.315s. The three engineer-flagged caveats (m4a empty trkn, durationString mm:ss-only, ThemeManager UserDefaults.standard touch) all triaged as NIT — none worth a kickback. The Vorbis-from-FLAC fallback regression test is in place at TrackMetadataTests.swift:35-48 and is the highest-value test added by this card. Closing to done/. Next: 0006c integration tests.
