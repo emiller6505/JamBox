@@ -4,7 +4,7 @@ title: Resume playback position on launch
 created: 2026-04-08
 needs_designer: true
 designer: designer-12
-design_review: null
+design_review: designer-12-review
 engineer: engineer-12
 qa: qa-12
 parent: null
@@ -246,6 +246,7 @@ Expected `touches:` stays as in frontmatter, possibly drop `ContentView.swift` i
 - 2026-04-08 — engineer-12 self-audited (all 7 steps), moving to qa/
 - 2026-04-08 — qa-12 claimed card, starting §6b independent audit
 - 2026-04-08 — qa-12 completed §6b: read both touched files top-to-bottom, walked `git diff f031f16` line by line, verified §7.1 single construction site via grep (3 AVURLAsset sites, all pass assetOptions; single queue-path site at PlayerEngine.swift:72), ran independent `xcodebuild ... build` → ** BUILD SUCCEEDED **. All acceptance bullets PASS, all §7 invariants PASS. Recommendation: APPROVE.
+- 2026-04-08 — designer-12-review claimed card for §6c post-QA edge-case review; card stays in qa/ during this pass
 
 ## Self-Audit
 
