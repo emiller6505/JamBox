@@ -63,17 +63,49 @@ This card is the first of four split from card 0006 (automated test coverage), r
 - Snapshot tests → not on the roadmap
 
 ## Plan
-*Filled in by the engineer during plan mode, BEFORE any code edits. See .pm/README.md §5.*
+
+**Framework choice committed: XCTest.** Rationale: XCTest is the safer default per the card's own guidance. While Xcode 26.4 is installed (ample for Swift Testing), XCTest gives us richer file-level helpers for the Layer 1 static checks (e.g. `XCTAssertEqual`/`XCTFail` with in-context error messages and explicit line numbers via `XCTSourceCodeLocation`), and, crucially, every future engineer on this repo has seen XCTest before. The static checks are our highest-value regression defense and must have maximum clarity when they fail; a #expect macro showing a boolean is strictly less useful than an XCTest failure with an explicit "found `AVURLAsset(...)` in JamBox/Foo.swift line 42 without precise-timing-key" message. Swift Testing has its virtues for data-driven parameterized tests, but none of the Layer 1 checks are data-driven — they're filesystem greps with narrative errors.
 
 **Approach:**
 
+1. **Fixtures first.** Write `JamBoxTests/Fixtures/generate.sh` using `ffmpeg`, `flac`, and `afconvert` to produce six small files (mp3, m4a AAC, flac 16-bit, flac 24-bit, wav, aiff), each 1–2s of a low-amplitude sine tone, tagged with known title/artist/album/track/genre values. The 24-bit FLAC is non-negotiable and gets explicit bit-depth verification in the script (using `ffprobe` to assert `bits_per_raw_sample=24`). Each fixture is <100 KB. The script is idempotent — re-running it overwrites and reproduces the same tags/format. Script is committed and chmod +x. Run it once to produce the committed fixtures.
+2. **Test target via XcodeGen.** Add a `JamBoxTests` target of type `bundle.unit-test` to `project.yml`, with `JamBoxTests/` as its source root, a test host of the `JamBox` app target (for `@testable import`), and a resource entry for `JamBoxTests/Fixtures/` (copied as bundle resources so fixture URLs are discoverable via `Bundle(for: …).url(forResource:…)`). Regenerate `JamBox.xcodeproj` with `xcodegen generate`. The `.gitignore` currently ignores `*.xcodeproj/`; I will **force-add** `JamBox.xcodeproj` (acceptance bullet requires the regenerated project be committed). Rationale for force-add vs .gitignore edit: the project file is generated, and wholesale unignoring would invite accidental commits of per-user diffs; a one-time force-add keeps the contract "project.yml is the source of truth" intact and matches how most XcodeGen repos operate.
+3. **Placeholder test and infrastructure green.** Create `JamBoxTests/JamBoxTests.swift` with a single `testPlaceholder` that asserts `true`. Run `xcodebuild -project JamBox.xcodeproj -scheme JamBox -destination 'platform=macOS' test` and confirm exit 0. Only then layer the static checks on top.
+4. **Layer 1 static checks** — `JamBoxTests/StaticChecks/`:
+    - `AVURLAssetPreciseTimingTests.swift` — walks every `.swift` file in `JamBox/` (discovered by scanning the repo root from the test, computed relative to `#file`), scans for `AVURLAsset(` occurrences, and for each occurrence verifies the constructor call includes `AVURLAssetPreferPreciseDurationAndTimingKey` either in the same argument expression OR references a symbol named `assetOptions` (case-sensitive). Because Swift calls span lines, match a window from the `AVURLAsset(` opening paren until the matched closing paren. Emit clear `XCTFail` messages per offense with `file:line`.
+    - `SandboxBookmarkBalanceTests.swift` — counts `startAccessingSecurityScopedResource(` and `stopAccessingSecurityScopedResource(` across `JamBox/*.swift`; asserts equality. Comment explicitly notes count-equality is a v1 approximation (same call-site quantities, not per-flow pairing).
+    - `PlayerEnginePublishedAllowlistTests.swift` — hand-maintained allowlist constant matching the current `@Published` properties on `PlayerEngine`. Test greps `JamBox/PlayerEngine.swift` for `@Published var <name>` declarations scoped to the `PlayerEngine` class (not `PlaybackClock`), parses the names, and asserts the set equals the allowlist. Allowlist: `["isPlaying","currentTrack","currentArtwork","tracks","currentFormat"]`. Any new `@Published` on `PlayerEngine` forces the allowlist to be updated — this is the regression defense for card 0002.
+    - `PlayerEngineAVURLAssetCountTests.swift` — counts `AVURLAsset(` occurrences in `JamBox/PlayerEngine.swift`. **Open question resolved below:** the card specifies "exactly 1", but `PlayerEngine.swift` currently has **two** `AVURLAsset(` sites (line 155 `makeAssetItem`, line 734 `findArtwork`). The card's `artwork-search code path uses a different file` assumption is incorrect — `findArtwork` is defined inside `PlayerEngine.swift` as a `private static func`. I will NOT refactor production code to satisfy the literal "1" (that's scope creep for a test-infra card). Instead: the test asserts count **== 2** with a detailed comment documenting the two known legitimate sites (`makeAssetItem` for playback queue, `findArtwork` for embedded-artwork probe), and fails if any third site appears. Both must still pass the precise-timing-key check from the first static test; verified by inspection — both use `assetOptions`. This preserves the card's intent (brittle-by-design, forces deliberate conversation on new sites) while matching reality. I will flag this in Self-Audit step 7 and note it for the manager.
+5. **Docs.** Write `TESTING.md` at repo root: how to run, fixture layout, generate.sh usage, framework rationale, each Layer 1 check + the card it defends. Add a "Testing" subsection to `CLAUDE.md`'s Build Commands area linking to `TESTING.md` and adding the `xcodebuild test` command.
+
 **Files:**
+- `project.yml` — add `JamBoxTests` target.
+- `JamBox.xcodeproj` — regenerated, force-added.
+- `JamBoxTests/JamBoxTests.swift` — placeholder (may be removed once real tests exist, but kept as sanity baseline).
+- `JamBoxTests/Fixtures/generate.sh` — reproducible fixture generator.
+- `JamBoxTests/Fixtures/*.{mp3,m4a,flac,wav,aiff}` — six fixture files.
+- `JamBoxTests/StaticChecks/AVURLAssetPreciseTimingTests.swift`
+- `JamBoxTests/StaticChecks/SandboxBookmarkBalanceTests.swift`
+- `JamBoxTests/StaticChecks/PlayerEnginePublishedAllowlistTests.swift`
+- `JamBoxTests/StaticChecks/PlayerEngineAVURLAssetCountTests.swift`
+- `JamBoxTests/StaticChecks/RepoRoot.swift` — tiny helper to compute repo source root from `#file`.
+- `TESTING.md` — new.
+- `CLAUDE.md` — add Testing subsection.
 
 **Risks:**
+- **AVURLAsset grep false negatives.** Multi-line constructor calls where `AVURLAssetPreferPreciseDurationAndTimingKey` appears in the closing line of a dictionary literal on a separate line from `AVURLAsset(`. Mitigation: match balanced parens from `AVURLAsset(` through the matching `)` and search the whole window, not just the same line.
+- **Test discovers repo source files via `#file` — breaks if tests run from a pre-archived bundle.** Mitigation: test walks up from `#file` until it finds a `JamBox.xcodeproj` sibling and a `JamBox/` directory; if not found, `XCTFail` early with a clear diagnostic. Local `xcodebuild test` will always find it.
+- **Fixture non-determinism.** ffmpeg timestamps, metadata ordering. Mitigation: explicit `-metadata` flags, fixed sample count, fixed seed for the sine generator, `-map_metadata -1` to scrub auto-tags; generate.sh is the source of truth.
+- **`xcodegen generate` might silently reject the test target if settings are missing.** Mitigation: copy the pattern from similar small XcodeGen test target examples; verify with `xcodegen generate` then `xcodebuild -list`.
+- **Force-adding `JamBox.xcodeproj` may pollute future diffs** when other engineers regenerate. Accepted: the acceptance bullet demands it; future cards are expected to re-commit regenerations.
+- **Production code rule.** I am explicitly NOT touching `JamBox/*.swift`. If `@testable import JamBox` requires any internal-to-public promotions, I'll call them out in Self-Audit step 7. My best guess: none are needed for the Layer 1 static checks (they are file-text scanners that don't touch PlayerEngine types at runtime).
+- **§7 invariants preserved?** Yes — no runtime audio code is touched. Build-green invariant: verified via `xcodebuild build` step in self-audit.
 
 **Open questions:**
+- The card says `AVURLAsset(` count in `PlayerEngine.swift` must be exactly 1. Reality is 2. Resolved above (assert == 2 with documentation). Flagged for manager awareness.
+- The card's @Published allowlist example omits `currentFormat` but reality includes it. Resolved: use the actual current set.
 
-**Framework choice committed (XCTest / Swift Testing):**
+**Framework choice committed:** XCTest.
 
 ## Log
 - 2026-04-08 — manager split card 0006 into 0006a/b/c/d; created this card in ready/
