@@ -6,7 +6,7 @@ needs_designer: false
 designer: null
 design_review: null
 engineer: opus-4.6
-qa: null
+qa: opus-4.6
 parent: 0006
 priority: P1
 estimate: M
@@ -98,6 +98,7 @@ Also: `xcodegen generate` to regenerate project (new source files under JamBoxTe
 - 2026-04-08 — engineer claimed, → in-progress
 - 2026-04-08 — plan written
 - 2026-04-08 — impl complete, 34 tests pass in 0.192s, build green, → qa
+- 2026-04-08 — qa started
 
 ## Self-Audit
 
