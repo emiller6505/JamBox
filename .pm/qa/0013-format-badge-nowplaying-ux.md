@@ -6,7 +6,7 @@ needs_designer: true
 designer: designer-13
 design_review: null
 engineer: engineer-13
-qa: null
+qa: qa-13
 parent: null
 priority: P2
 estimate: S
@@ -355,6 +355,7 @@ Acceptance list is **unchanged**. No edits to frontmatter.
 - 2026-04-08 — engineer-13 picked up, moved ready/ → in-progress/
 - 2026-04-08 — engineer-13 plan written and committed
 - 2026-04-08 — engineer-13 implementation complete: AudioFormat struct + @Published currentFormat on PlayerEngine (not PlaybackClock), loadFormat mirrors loadArtwork identity-check pattern, readAudioFormat via CMAudioFormatDescription → ASBD with mFormatID whitelist (WAV/AIFF disambiguated by URL extension only — the one and only extension lookup), NowPlayingBar metadata VStack gains fourth waveform line and all existing text lines get the designer's fixed-pt font bump (15/13/13/11/12). Track.swift not touched (format is per-current-item transient, §7.3); dropped from touches:. xcodebuild BUILD SUCCEEDED, no new warnings. Self-audit complete.
+- 2026-04-08 — qa-13 picked up card, starting §6b independent audit
 
 ## Self-Audit
 
