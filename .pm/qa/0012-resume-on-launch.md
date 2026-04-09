@@ -247,6 +247,7 @@ Expected `touches:` stays as in frontmatter, possibly drop `ContentView.swift` i
 - 2026-04-08 — qa-12 claimed card, starting §6b independent audit
 - 2026-04-08 — qa-12 completed §6b: read both touched files top-to-bottom, walked `git diff f031f16` line by line, verified §7.1 single construction site via grep (3 AVURLAsset sites, all pass assetOptions; single queue-path site at PlayerEngine.swift:72), ran independent `xcodebuild ... build` → ** BUILD SUCCEEDED **. All acceptance bullets PASS, all §7 invariants PASS. Recommendation: APPROVE.
 - 2026-04-08 — designer-12-review claimed card for §6c post-QA edge-case review; card stays in qa/ during this pass
+- 2026-04-08 — designer-12-review completed §6c: walked every [MUST HANDLE] / [NICE TO HANDLE] item — all PASS or accepted-as-deferred. Fresh brainstorm surfaced two MINOR race-window concerns around the async duration-clamp path (scrub-handle flash while duration=0; mid-playback yank if user fast-double-clicks the same resumed track with an overshoot saved position) and one FUTURE item (track identity reconciliation) the original designer explicitly deferred. Filed child cards 0014 (scrub-handle flash, ready/), 0015 (async-clamp race, ready/), 0016 (track identity reconciliation, backlog/). Recommendation: APPROVE WITH CHILD CARDS. Card stays in qa/ for manager to close.
 
 ## Self-Audit
 
@@ -336,13 +337,96 @@ Independent §6b audit by qa-12. Read both touched files top-to-bottom, walked `
 The implementation is clean, faithful to the plan, and passes every acceptance bullet and project invariant under independent audit. The §7.1 single-construction-site extraction is the central structural win and it was executed correctly (grep confirms exactly one queue-path AVURLAsset site). The resume flow respects the synchronous-seeding-before-async-duration-load rule so the scrub bar never flashes 0. All silent-clear failure modes route through `clearPlaybackState` with no modals or log spam. Build is green. No blockers, no majors, no child cards needed. Leaving card in `qa/` for the manager to re-dispatch the designer for the §6c post-QA pass.
 
 ## Design Review
-*Filled in by the designer AFTER QA approves. See .pm/README.md §6c.*
+
+Post-QA §6c pass by designer-12-review. Read original `## User Risks & Edge Cases`, `## Plan`, `## Self-Audit`, `## QA Report`, and the full `git diff f031f16 -- JamBox/PlayerEngine.swift JamBox/AppModel.swift`. This pass does NOT re-run QA's checklist; it asks one question: as a real user encountering this on day one, what does the implementation miss?
 
 ### Original risks revisited
 
+**Happy path**
+- [PASS] 45-minute-mix resume — `PlayerEngine.resume` seeds `currentTrack`, `clock.position`, lookahead synchronously; `queuePlayer.play()` is never called; space bar through existing `togglePlayPause` resumes; lookahead fills for gapless next transition.
+
+**Empty / first-run**
+- [PASS] Fresh install, nothing played — `loadPlaybackState()` returns nil on missing UserDefaults key; `tryRestorePlayback` returns early; unchanged existing path.
+- [PASS] Folder restored, nothing ever played — same early-return; no write happens until `savePlaybackState()` is triggered while `currentTrack != nil`.
+- [PASS] Saved state present but bookmark gone — `loadSavedFolder` returns early before `tryRestorePlayback` is invoked; saved state is quietly left intact and either resumed or cleared on the next successful launch. Matches designer expectation ("No folder selected. No modal").
+- [PASS] Saved at position 0 — `sanitized == 0` is a legal seed; scrub bar reads 0:00, pressing play starts from the beginning. Not special-cased as "nothing to resume."
+
+**Malformed / hostile input**
+- [PASS] Deleted file — `FileManager.fileExists(atPath:)` check at AppModel.swift tryRestorePlayback, clears and returns.
+- [PASS] Moved/renamed — same path (URL no longer resolves), silent clear. Smart reconciliation explicitly deferred.
+- [PASS] Corrupt / 0-byte / unreadable — `asset.load(.duration)` returns nil or non-finite; the async Task invokes `onFailure` + `clearPlayback`, so the now-playing bar is cleared and UserDefaults is cleared. No modal.
+- [WONT HAPPEN, as documented] Replaced-with-different-file — degraded-gracefully per designer doc.
+- [PASS] URL outside restored folder — `quickTracks.firstIndex(where:)` fails, silent clear.
+- [PASS] Corrupt JSON — `try?` in `loadPlaybackState` returns nil, clears the key.
+- [PASS] Schema drift — `decoded.version == currentVersion` check, clears on mismatch. Missing field becomes a decode error → clear.
+- [PASS] Negative / NaN / infinite position — `sanitized = (position.isFinite && position >= 0) ? position : 0`; then re-clamped against loaded duration.
+
+**Scale stress**
+- [PASS] 50k-track library — `firstIndex(where:)` is O(n) once at launch; negligible.
+- [PASS] Tiny save payload — JSON encode of `{version, trackURL, position}`, UserDefaults write every 5s.
+- [PASS] Timer gated on `isPlaying` — `handleIsPlayingChanged(false)` invalidates. Verified.
+- [PASS] Sort from 0011 — resume is URL-based, sort-independent.
+
+**Concurrency / interruption**
+- [PASS] Crash mid-save — UserDefaults atomicity; worst case lose 5s. Design accepted.
+- [PASS] Metadata still enriching at quit — save reads `player.currentTrack?.url` + `clock.position`, both valid regardless of enrichment state.
+- [PASS] Quit mid-transition — `savePlaybackState` reads whatever `currentTrack` + `clock.position` happen to be at notification time; either the outgoing-at-end or incoming-at-0. Both acceptable per designer.
+- [PASS] User presses play in the tiny window before resume completes — the synchronous portion (currentTrack, lookahead insert, clock seed, seek) runs inside `loadFolder` on the MainActor before the metadata Task is launched. No suspend point between `loadTracks` and `tryRestorePlayback`. Verified.
+- [PASS] User picks different folder before resume completes — subsequent `loadFolder(new)` calls `loadTracks` which clears `currentTrack`; the pending Task's `currentTrack?.url == savedURL` check catches this and abandons.
+- [PASS] User clicks different track before pressing play — `play(startingAt:)` calls `queuePlayer.removeAllItems()` + re-inserts; the in-flight Task's URL-equality guard abandons cleanly (different track).
+- [PASS] Skip-forward from resumed state — existing `playNext()` / `advanceToNextItem` semantics unchanged.
+- [PASS] Lookahead filled before play — PlayerEngine.swift:276-279 inserts `lookAhead = 3` items synchronously mirroring `play(startingAt:)`.
+
+**"Wrong" user actions**
+- [PASS] Search field focused at quit — ephemeral, not persisted. Resume independent.
+- [NICE TO HANDLE, accepted] Mid-scrub-drag at quit — `clock.position` reflects actual playback (not the drag preview), so save captures the last released position. Degrades gracefully.
+- [PASS] Multi-folder mismatch — URL equality filters.
+- [PASS] Close-and-reopen window without quitting — `loadFolder` is invoked once from `loadSavedFolder` at init, not on window reopen; ContentView `.onAppear` doesn't trigger it. Resume only fires once per app launch.
+- [PASS] Nothing-ever-played quit — `savePlaybackState()` clears the key when `currentTrack == nil`.
+- [PASS] currentTrack set but position 0 — saved and restored faithfully.
+- [PASS] Media key on resumed state — `currentTrack != nil`, so `togglePlayPause` plays. No code change needed.
+
+**Accessibility**
+- [PASS] VoiceOver — the resumed-paused state is functionally identical to the existing paused state; no new UI.
+- [PASS] Keyboard-only — space bar / media keys work by virtue of `currentTrack != nil`.
+- [N/A] Reduced-motion, locale, Dynamic Type — no new UI.
+
+**Failure recovery**
+- [PASS] Corrupt JSON — clear, proceed.
+- [PASS] URL unresolvable — clear, proceed.
+- [PASS] Duration load fails — `clearPlayback()` + `onFailure()` tear down cleanly.
+- [NICE TO HANDLE, accepted] Seek fire-and-forget — tolerable.
+- [PASS] UserDefaults write denied — `try? JSONEncoder().encode(...)` is guarded; `UserDefaults.set` silently no-ops if the domain is readonly. Not crashy.
+
+**Project landmines**
+- [PASS] §7.1 — single queue-path `AVURLAsset` site via `makeAssetItem`. `play(startingAt:)` and `enqueueMoreIfNeeded` both collapsed to it. `resume` uses it. Verified.
+- [PASS] §7.2 — resume fills `lookAhead = 3` synchronously.
+- [PASS] §7.3 — `updateMetadata` untouched; resume uses cheap `init(url:)` Track; in-place swap preserved.
+- [PASS] §7.4 — zero new scoped-resource calls; folder bookmark reused.
+
 ### Newly surfaced concerns
 
+- [MINOR] **Scrub-handle flash when duration starts at 0** — `clock.position` is seeded synchronously to the saved value (correct per designer's "no flash" guardrail), but `clock.duration` is seeded from `tracks[index].duration` which is **0 for the cheap `init(url:)` Track** (PlayerEngine.swift, resume method). The scrub fraction in NowPlayingBar.swift:166 is `guard clock.duration > 0 else { return 0 }`, so the handle bead renders at the LEFT edge of the bar while the LEFT time label correctly reads e.g. "45:01" and the RIGHT label reads "0:00". This is visually inconsistent for however long it takes `asset.load(.duration)` to resolve (typically <10ms for a local FLAC, but potentially hundreds of ms on a slow disk or iCloud placeholder). The designer's do-not-do was specifically "Do NOT start the scrub bar at 0 and then jump to the saved position" — the position number doesn't jump, but the handle bead does, which is arguably in the same spirit. Fix is trivial: persist `duration` in `PlaybackState` alongside position, seed `clock.duration` from it synchronously, then let the async Task overwrite with the precise value. Child card in `ready/`.
+
+- [MINOR] **Async duration-clamp can yank the user mid-playback in a narrow race** — scenario: saved state is (Track A, position 90s). Track A's actual duration is 60s (re-encoded shorter between sessions). User launches → `resume` seeds at 90s, spawns Task to load real duration. User fast-double-clicks Track A to play it fresh from 0. `play(startingAt:)` runs, removes items, re-inserts, seeks to 0, plays. `currentTrack` is still Track A (by URL identity). Task completes with duration=60s → `currentTrack?.url == savedURL` passes → `clamped = min(90, 60) = 60` → `abs(60 - 90) = 30 > 0.01` → `queuePlayer.seek(to: 60s)`. **User pressed play at 0:00 and gets yanked to the end of the track.** Probability is low (requires saved position to overshoot, which itself is uncommon, AND the user to re-click specifically the resumed track quickly, AND the duration-load to be slower than the user's click). But the failure mode is "audio jumps unexpectedly," which is a playback integrity smell and the whole point of this card is "JamBox respects my time." Fix: the Task should only re-seek if `clock.position` is still approximately equal to the original `sanitized` (i.e. the user hasn't moved it). Child card in `ready/`.
+
+- [MINOR] **`clearPlayback()` on duration-load failure can tear down already-active playback** — related to the above. If the user pressed play during the duration-load window, and then the load returns non-finite (AVFoundation API oddity; unlikely since playback usually requires a valid duration), the Task calls `clearPlayback()` which wipes `currentTrack` and the queue. The user sees their playing track vanish. The `currentTrack?.url == savedURL` guard does NOT protect against this — the user could have pressed play on the SAME track (double-click resumes) and the URL still matches. Mitigation: before tearing down, check `queuePlayer.timeControlStatus != .playing`. Rolled into the same child card as the previous concern since they share the same race window.
+
+- [FUTURE] **Fallback reconciliation when the saved URL is gone** — today "file moved or renamed" silently clears, which is the explicitly-chosen behavior per designer doc. A future feature could look for the file by name inside the current folder, or eventually by content hash. Not a concern for this card. Child card in `backlog/`.
+
+- [INFO, not a concern] **`chooseFolder` invokes `tryRestorePlayback` on the newly-picked folder** — if the user is mid-session and manually picks a different folder, the current resume pipeline runs against the new folder's tracks. The saved state (possibly pointing to the old folder's track) fails the URL-match check and silently clears. This is correct behavior; noting it so nobody later "fixes" it by gating resume to launch-only.
+
+- [INFO, not a concern] **`isPlaying` Combine sink fires once at subscription time with the initial value (false)** — `handleIsPlayingChanged(false)` invalidates a nil timer, harmless. Noting so a future reader doesn't think `.dropFirst()` is needed.
+
 ### Recommendation
+
+- **APPROVE WITH CHILD CARDS**
+
+The implementation faithfully executes a well-specified design. Every [MUST HANDLE] and [NICE TO HANDLE] risk from the original spec is either handled correctly or deferred with the designer's blessing. The §7.1 extraction of `makeAssetItem` is a real architectural win beyond the card's strict ask and collapses two prior duplicated construction sites. The silent-clear failure modes are uniform (no modals, no log spam), matching the "invisible feature" intent.
+
+Two MINOR concerns surfaced that only become visible once real code exists: a brief scrub-handle-position flash during the async duration-load window, and a narrow race where the async clamp can yank the user mid-playback if they fast-double-click the same resumed track and the saved position overshoots the real duration. Neither is a day-one disaster — the first is visually imperceptible in practice, and the second requires a compound scenario. Both are worth follow-up child cards but do not justify kicking this card back. One FUTURE card for the "smart reconciliation" idea the designer explicitly deferred.
+
+Leaving card in `qa/` for the manager to close. Child cards filed with `parent: 0012`.
 
 ## Manager Decision
 *Filled in by the manager when closing or kicking back.*
