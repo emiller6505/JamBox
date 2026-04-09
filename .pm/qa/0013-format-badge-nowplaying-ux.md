@@ -356,6 +356,7 @@ Acceptance list is **unchanged**. No edits to frontmatter.
 - 2026-04-08 — engineer-13 plan written and committed
 - 2026-04-08 — engineer-13 implementation complete: AudioFormat struct + @Published currentFormat on PlayerEngine (not PlaybackClock), loadFormat mirrors loadArtwork identity-check pattern, readAudioFormat via CMAudioFormatDescription → ASBD with mFormatID whitelist (WAV/AIFF disambiguated by URL extension only — the one and only extension lookup), NowPlayingBar metadata VStack gains fourth waveform line and all existing text lines get the designer's fixed-pt font bump (15/13/13/11/12). Track.swift not touched (format is per-current-item transient, §7.3); dropped from touches:. xcodebuild BUILD SUCCEEDED, no new warnings. Self-audit complete.
 - 2026-04-08 — qa-13 picked up card, starting §6b independent audit
+- 2026-04-08 — qa-13 audit complete. Acceptance 12/12 PASS, invariants all PASS, build SUCCEEDED on MacOSX26.4.sdk. `kAudioFormatMPEG4AAC_Spatial` investigated against the SDK header — it is a plain `CF_ENUM` enumerator with no `API_AVAILABLE` attribute, so it compiles to an integer constant with no runtime availability check and is safe at the macos14.0 deployment target. No BLOCKER/MAJOR findings. Recommendation: APPROVE. Card stays in qa/ for post-QA design review.
 
 ## Self-Audit
 
@@ -426,15 +427,54 @@ Changes match the card exactly:
 Nothing smuggled in. No drive-by refactors. No unrelated fixes.
 
 ## QA Report
-*Filled in by the QA agent. See .pm/README.md §6b.*
+*qa-13, 2026-04-08. Independent audit per §6b.*
 
 ### Acceptance
 
+- **[PASS]** Badge shows FLAC/ALAC/MP3/AAC/WAV/AIFF + kHz + bit for current track. `readAudioFormat` at PlayerEngine.swift:538-617 pulls `mFormatID` from the first audio track's `CMAudioFormatDescription` → `AudioStreamBasicDescription`, maps to the exact whitelist. Visual string built by `AudioFormat.visual` at PlayerEngine.swift:51-53 using middle-dot U+00B7.
+- **[PASS]** Fetched from existing `AVPlayerItem.asset`, no new `AVURLAsset`. `handleItemChange` passes `item.asset` (an existing `AVAsset`) into `loadFormat` at PlayerEngine.swift:493. `loadFormat(for:from:)` accepts `AVAsset` and calls `asset.loadTracks(...)` / `audioTrack.load(.formatDescriptions)` — zero constructor calls. Grep `AVURLAsset\(` in JamBox/ returns exactly the three pre-existing sites (Track.swift:53, PlayerEngine.swift:155 makeAssetItem, PlayerEngine.swift:670 findArtwork). Invariant preserved.
+- **[PASS]** Only on `currentItem` change, not per scrub tick. `loadFormat` is called exclusively from `handleItemChange` (PlayerEngine.swift:493), which is bound to `queuePlayer.publisher(for: \.currentItem)` at PlayerEngine.swift:167-172. The 4Hz periodic observer at PlayerEngine.swift:174-193 writes only to `clock.position` / `clock.duration` and never touches `currentFormat`.
+- **[PASS]** `@Published currentFormat` lives on `PlayerEngine`, not `PlaybackClock`. Declared at PlayerEngine.swift:113 inside `PlayerEngine`. `PlaybackClock` (PlayerEngine.swift:20-23) still has only `position` + `duration`. Clock split preserved.
+- **[PASS]** Entire badge hidden if any field unknown/missing/zero. `readAudioFormat` returns nil on: no audio tracks (543-546), no format descriptions (548-551), no ASBD (553-555), codec outside whitelist (594-595), LPCM with unknown extension or non-URL asset (577-593), sample rate non-finite/≤0 (600), `mBitsPerChannel` == 0 (604). View side at NowPlayingBar.swift:107 is `if let format = player.currentFormat` — whole row hidden on nil. No partial badge is constructible.
+- **[PASS]** VoiceOver label in long form, distinct from visual. `AudioFormat.voiceOver` at PlayerEngine.swift:58-61 reads `"Audio format: FLAC, 96 kilohertz, 24 bit"` (and `"...floating point"` for float). Applied via `.accessibilityElement(children: .combine).accessibilityLabel(format.voiceOver)` at NowPlayingBar.swift:116-117.
+- **[PASS]** UX font-size bump across the bar. Title 15 semibold (NowPlayingBar.swift:80), artist 13 regular (:92), album 13 regular (:101), badge 11 monospaced regular (:114), timestamps 12 monospaced regular with `.monospacedDigit()` preserved (:154-155, :178-179). Transport icons unchanged at `.title2` (:134, :139, :144). Values match designer spec exactly; all fixed pt (not Theme tokens) per spec rationale.
+- **[PASS] (code-level)** Legibility at minWidth 500 / all themes / artwork visible. Badge worst case `FLAC · 176.4 kHz · 32 bit float` is ~34 monospaced-11-pt chars ≈ 220 pt; metadata column at minWidth 500 has ~304 pt after artwork/transport/padding per designer math. `.lineLimit(1)` on the badge (NowPlayingBar.swift:112) guarantees no wrap. Colors route through `themeManager.current.secondaryText ?? Color.secondary` — resolves in light/dark/candy. (Runtime theme-switch visual verification deferred to post-QA designer review; code is structurally correct.)
+- **[PASS]** No regressions. Scrub-decouple `isScrubbing`/`scrubFraction`/`scrubBinding` at NowPlayingBar.swift:20-21, 159-174, 204-209 untouched. Clickable artwork `onTapGesture { showArtwork = true }` + `PointerCursorView` overlay at :59-60 untouched. Transport cell (:130-148) entirely unchanged except body is the same three `.title2` icons. `onTitleClick` callback at :83 still wired to title tap. `displayedPosition` / `formatTime` / `clock.duration` path all untouched.
+- **[PASS]** Build passes. Ran `xcodebuild -project JamBox.xcodeproj -scheme JamBox build` against `MacOSX26.4.sdk`. Result: `** BUILD SUCCEEDED **`. No new warnings.
+- **[PASS]** §7.1 AVURLAsset preserved (see above).
+- **[PASS]** §7.2 gapless preserved. `enqueueMoreIfNeeded` (PlayerEngine.swift:498-508) untouched. Queue `insert`/`remove`/`items()` calls unchanged. `lookAhead = 3` constant untouched. `loadFormat` runs in a detached `Task` with zero queue mutation.
+- **[PASS]** §7.3 two-phase loading preserved. `Track.swift` not modified (confirmed via diff); format is per-current-item transient on `PlayerEngine`, never added to `Track`, never touched by `FileScanner`.
+
 ### Invariants
+
+- **[PASS]** §7.1 AVURLAsset + precise timing. No new constructor; reuses `item.asset` from the queue which was built via `makeAssetItem` with `assetOptions` including `AVURLAssetPreferPreciseDurationAndTimingKey`. The three `AVURLAsset(` sites in the codebase (Track.swift:53, PlayerEngine.swift:155, PlayerEngine.swift:670) are all pre-card-0013 and all pass `assetOptions`.
+- **[PASS]** §7.2 Gapless playback. Queue management (insert/remove/advance/lookAhead=3) untouched. `loadFormat` is a read-only async Task off `item.asset`.
+- **[PASS]** §7.3 Two-phase loading. `Track.swift` untouched. Format is transient state on `PlayerEngine`, cleared in `loadTracks`, `applyTrackDiff` (removed-current path), `clearPlayback`, and `handleItemChange` (both nil-item and new-item branches). Never bulk-loaded by `FileScanner`.
+- **[PASS]** §7.4 Sandbox bookmarks. No new `startAccessingSecurityScopedResource` calls; reuses the existing in-queue asset, no new file access.
+- **[N/A]** §7.5 Xcode project regeneration. No files added/removed; only edits.
+- **[PASS]** §7.6 Build green (see Acceptance).
+- **[PASS]** PlaybackClock isolation. `@Published currentFormat` is on `PlayerEngine` (PlayerEngine.swift:113). `PlaybackClock` still contains only `position` + `duration` (lines 20-23). The 4Hz tick at lines 174-193 writes to `self.clock.*` only, never touches `currentFormat`, and therefore cannot cause NowPlayingBar to re-read format or re-fetch. NowPlayingBar observes `player` (which publishes `currentFormat`) and `clock` (position/duration) separately; the only path that assigns `currentFormat` is `loadFormat`'s completion on `currentItem` change.
+- **[PASS]** Identity check on async fetch. `loadFormat` at PlayerEngine.swift:522-533 captures `track.id` at dispatch, then on `MainActor.run` guards `self.currentTrack?.id == capturedId` before assigning. Mirrors `loadArtwork` pattern at PlayerEngine.swift:633-642 verbatim. Rapid next-track cannot show stale format: (a) `currentFormat = nil` is set synchronously in `handleItemChange` before `loadFormat` is dispatched (line 491), so the badge disappears immediately; (b) if an older fetch lands after a newer `currentTrack` has been assigned, the id mismatch drops it.
+- **[PASS]** Hide-whole-badge on any missing/zero. All six fail paths in `readAudioFormat` return nil (codec unknown, LPCM-unknown-ext, non-URL asset for LPCM, no audio track, no formatDesc, no ASBD, sample rate ≤0/non-finite, bit depth == 0). Single `if let` on the view side.
+- **[PASS]** Format string exact. `AudioFormat.visual` at PlayerEngine.swift:52 uses `"\(name) · \(sampleRateNumber) kHz · \(bitDepthString)"` with U+00B7 middle dot. `sampleRateNumber` (PlayerEngine.swift:70-81) divides by 1000, shows integer when fractional part ≈ 0 else one decimal, forces `Locale(identifier: "en_US_POSIX")` into `String(format:locale:)` so period decimal is locale-independent. `bitDepthString` (PlayerEngine.swift:85-90) produces `"<N> bit"` or `"<N> bit float"` — never pluralized, never "bits".
+- **[PASS]** Format name source. From `asbd.mFormatID` at PlayerEngine.swift:563. The switch maps the `.m4a`-container codecs correctly: `kAudioFormatAppleLossless` → "ALAC", the six `kAudioFormatMPEG4AAC*` variants → "AAC". Extension is ONLY consulted inside `case kAudioFormatLinearPCM:` (lines 577-593) to disambiguate WAV/AIFF; both are LPCM containers so this is the acceptable exception noted in the plan.
+- **[PASS]** VoiceOver label distinct from compact visual (see Acceptance).
+- **[PASS]** Multi-audio-track files: first audio track picked via `tracks.first` at PlayerEngine.swift:544. Matches plan and AVQueuePlayer playback behavior.
+- **[PASS]** Font sizes fixed pt not Theme tokens. Verified by reading every `.font(.system(size:` in NowPlayingBar.swift — 15/13/13/11/12 exactly where the designer specified, no `Theme.swift` font tokens used in the updated lines.
+- **[PASS]** Layout fits at minWidth: 500. Album art still 60×60 (NowPlayingBar.swift:57, :63). Transport icons unchanged. `.lineLimit(1)` on all four metadata lines guarantees the metadata column cannot push transport — truncation happens first.
 
 ### Findings
 
+- **[MINOR / RESOLVED]** Engineer flagged `kAudioFormatMPEG4AAC_Spatial` as possibly post-14.0. Investigated: this identifier is declared in `CoreAudioBaseTypes.h` inside a plain `CF_ENUM(AudioFormatID)` with **no `API_AVAILABLE` attribute** on the enumerator (see `$SDK/System/Library/Frameworks/CoreAudioTypes.framework/Versions/A/Headers/CoreAudioBaseTypes.h` around line 421). Because `CF_ENUM` enumerators compile to integer constants (four-char-code 'aacs'), there is no runtime availability check — the compiled binary just contains the integer. There is no availability-attribute failure at the macOS 14.0 deployment target and no `#available` wrapping is needed. Leaving the case in is safe. Non-blocking; no change requested.
+- **[MINOR]** The `asbd.mFormatFlags & kAudioFormatFlagIsFloat` check is gated on `kAudioFormatLinearPCM` only (PlayerEngine.swift:608-609), which matches spec. FLAC's `mFormatFlags` carries bit-depth metadata in some cases but never the float flag, so this is correct. Non-actionable, noted for reviewer context.
+- **[NIT]** At PlayerEngine.swift:483, `item.asset as? AVURLAsset)?.url as NSURL?` comparison is the pre-existing matching logic and is unchanged by this card. Noted only to confirm no scope creep.
+- **[NIT]** Engineer's self-audit line-number references are slightly off in a few places (they cited "PlayerEngine.swift:538-621" for `readAudioFormat` which is actually 538-617, and "NowPlayingBar.swift:117-118" for accessibility which is 116-117). Harmless.
+
+No BLOCKER or MAJOR findings.
+
 ### Recommendation
+
+**APPROVE.** All 12 acceptance bullets PASS. All applicable §7 invariants PASS. §7.1 AVURLAsset rule verified by independent grep (same three pre-existing construction sites). PlaybackClock isolation verified. Identity check mirrors `loadArtwork` verbatim. Hide-on-missing is airtight (six fail paths + view-level `if let`). Format string exact (U+00B7, locale-independent period, "bit" not "bits", float special case). `kAudioFormatMPEG4AAC_Spatial` is safe at 14.0 deployment target because `CF_ENUM` identifiers have no availability attributes — investigation results above. Build succeeds. No new warnings. No BLOCKER / MAJOR findings. Card ready to proceed to post-QA design review (§6c) since `needs_designer: true`.
 
 ## Design Review
 *Filled in by the designer AFTER QA approves. See .pm/README.md §6c.*
