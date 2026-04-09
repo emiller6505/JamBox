@@ -5,7 +5,7 @@ created: 2026-04-08
 needs_designer: false
 designer: null
 design_review: null
-engineer: null
+engineer: engineer-06d
 qa: null
 parent: 0006
 priority: P1
@@ -43,6 +43,7 @@ This is the slowest layer to develop and run. May be split further (0006d-1 / 00
 
 ## Log
 - 2026-04-08 — manager created card in backlog/, depends on 0006a
+- 2026-04-08 — engineer-06d claimed, mv ready → in-progress
 
 ## Self-Audit
 
