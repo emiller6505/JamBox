@@ -110,17 +110,56 @@ This card is the first of four split from card 0006 (automated test coverage), r
 ## Log
 - 2026-04-08 — manager split card 0006 into 0006a/b/c/d; created this card in ready/
 - 2026-04-08 — engineer-06a claimed card, moved to in-progress
+- 2026-04-08 — engineer committed plan (`pm: 0006a plan ready`)
+- 2026-04-08 — engineer generated all 6 fixtures + committed generate.sh (`pm: 0006a fixtures generated`)
+- 2026-04-09 — engineer resumed after 529 mid-session; completed test target wiring, placeholder green, Layer 1 static checks (4 files + RepoRoot helper), TESTING.md, CLAUDE.md update, regenerated+force-added JamBox.xcodeproj. All 5 tests pass locally. Moved to qa/.
 
 ## Self-Audit
 *Filled in by the engineer before handing off to QA. See .pm/README.md §6.*
 
-1. Re-read modified files:
-2. Acceptance walkthrough:
-3. Build result:
-4. Invariants verified:
-5. Hostile diff review:
-6. Touched-files reconciliation:
-7. Scope check:
+1. **Re-read modified files:** Yes — walked every file in the diff (project.yml, CLAUDE.md, TESTING.md, JamBoxTests/JamBoxTests.swift, JamBoxTests/StaticChecks/*.swift, JamBoxTests/Fixtures/generate.sh, and spot-checked JamBox.xcodeproj/project.pbxproj for sane target wiring). Static check tests use balanced-paren parsing for `AVURLAsset(` call windows, a regex for `@Published` parsing, and line-based counting for security-scoped calls — each test prints actionable failure messages.
+
+2. **Acceptance walkthrough (every bullet in the frontmatter):**
+    - XCTest target wired in `project.yml` with TEST_HOST/BUNDLE_LOADER pointing at the app, dependency on `JamBox`, Fixtures/generate.sh excluded from sources. ✓
+    - `xcodebuild -project JamBox.xcodeproj -scheme JamBox -destination 'platform=macOS' test` runs from clean checkout with no extra setup and exits 0. Final summary: `Executed 5 tests, with 0 failures (0 unexpected) in 0.070 (0.076) seconds` and `** TEST SUCCEEDED **`. ✓
+    - Framework choice (XCTest) documented in TESTING.md with a full paragraph of rationale. ✓
+    - Six fixtures present in `JamBoxTests/Fixtures/` covering mp3, m4a, flac-16, flac-24, wav, aiff with ID3/iTunes/vorb tags. Sizes: tone-16.flac 19K, tone-24.flac 41K, tone.aiff 86K, tone.m4a 9.3K, tone.mp3 8.3K, tone.wav 86K — all under 100K. ✓
+    - `generate.sh` committed, executable, idempotent. ✓
+    - Layer 1 static check — AVURLAsset precise-timing key: `AVURLAssetPreciseTimingTests`, balanced-paren parser, file:line diagnostics. Passes (all 3 AVURLAsset sites in JamBox/ use `assetOptions`). ✓
+    - Layer 1 static check — sandbox bookmark balance: `SandboxBookmarkBalanceTests`, count-equality with file:line on both sides. Passes (1 start in AppModel.swift:381, 1 stop in AppModel.swift:163). v1 limitation documented in source comment and TESTING.md. ✓
+    - Layer 1 static check — PlayerEngine @Published allowlist: `PlayerEnginePublishedAllowlistTests`, class-body scoped regex, drift diagnostics. Allowlist = {isPlaying, currentTrack, currentArtwork, tracks, currentFormat}. Passes. ✓
+    - Layer 1 static check — PlayerEngine AVURLAsset count: `PlayerEngineAVURLAssetCountTests`, asserts count == 2 (makeAssetItem + findArtwork), with comment documenting both legitimate sites and resolving the "exactly 1" mismatch in the card's acceptance bullet. Passes. ✓
+    - All Layer 1 checks live under `JamBoxTests/StaticChecks/` and run with the suite. ✓
+    - TESTING.md documents: how to run, layout, framework rationale, each Layer 1 check + defended card, fixture regeneration. ✓
+    - CLAUDE.md: added "Testing" subsection and the `xcodebuild test` command under Build Commands. ✓
+    - No production source files touched. Zero `@testable import` needed — all Layer 1 checks are plain file-text scanners that import only Foundation + XCTest. ✓
+    - App build still passes with zero NEW warnings (verified by diffing warnings from `git stash` + clean build against main: identical pre-existing set). ✓
+    - Runtime: 5 tests in 0.070 seconds of pure test execution time. Longest single test is `testEveryAVURLAssetUsesPreciseTimingKey` at 0.047s (reads and parses all JamBox/*.swift files — expected to be the slowest). Nothing > 5s. Testing-started-to-completed wall clock (xcodebuild reports after incremental rebuild): 1.815s. ✓
+    - JamBox.xcodeproj force-added. `.gitignore` left untouched; choice documented in plan (§step 2) and log. ✓
+
+3. **Build result:** `xcodebuild build` clean. `xcodebuild test` clean (5/5 pass). Zero new warnings vs main.
+
+4. **Invariants verified:**
+    - §7.1 (AVURLAssetPreferPreciseDurationAndTimingKey) — now enforced by a test, not just docs.
+    - §7.2 / §7.3 / §7.5 / §7.6 — no runtime code changed; preserved by construction.
+    - §7.4 (sandbox bookmark balance) — enforced by a test (v1 count-equality, documented limitation).
+    - Build-green — verified.
+    - No production .swift file touched.
+
+5. **Hostile diff review:**
+    - Could `AVURLAssetPreciseTimingTests` false-negative? Only if someone writes a multi-line constructor whose window contains a comment with `assetOptions` but does not actually pass it. Acceptable — the test trades a vanishingly rare false negative for zero false positives.
+    - Could `SandboxBookmarkBalanceTests` false-pass? Yes — 2 unpaired starts + 2 unpaired stops (N+N mismatch in different files) would pass. v1 limitation. Documented.
+    - Could `PlayerEnginePublishedAllowlistTests` false-pass? Only if a `@Published` is declared with an unusual attribute order not matched by the regex (e.g. `@MainActor @Published var`). Current code has no such case; if one appears later, the test will under-count and fail, which is the right failure mode.
+    - Could `PlayerEngineAVURLAssetCountTests` false-pass? Only if a new site is added simultaneously with removal of an existing one (net count unchanged). Extremely unlikely; both current sites are structural.
+    - Could the project.yml test target break the app scheme? Verified by running both `build` and `test` against the regenerated project — both green.
+
+6. **Touched-files reconciliation:** Frontmatter `touches:` lists project.yml, JamBox.xcodeproj, JamBoxTests/, TESTING.md, CLAUDE.md. Actual changed/added paths on disk: project.yml (M), CLAUDE.md (M), JamBoxTests/ (new: JamBoxTests.swift, Fixtures/*, StaticChecks/*), TESTING.md (new), JamBox.xcodeproj (regenerated, force-added). **Exact match. No frontmatter update needed.**
+
+7. **Scope check:**
+    - No production code in `JamBox/*.swift` touched. Verified via `git status` — only project.yml, CLAUDE.md, and new JamBoxTests/ + TESTING.md appear. The regenerated JamBox.xcodeproj is force-added as required by the card.
+    - No `@testable import JamBox` used. Layer 1 static checks are file-text scanners; they don't need access to internal types.
+    - **Open issue flagged to manager (intentional, per plan):** card acceptance bullet says "`AVURLAsset(` in `PlayerEngine.swift` count is exactly 1". Reality is 2 — both `makeAssetItem` (playback queue, card 0012 extraction) and `findArtwork` (embedded-artwork probe) live in `PlayerEngine.swift`. Per the plan's open-question resolution (pre-approved by the manager in the resume prompt), `PlayerEngineAVURLAssetCountTests` asserts `count == 2` with a comment documenting both legitimate sites, rather than refactoring production code for a test-infra card. The brittle-by-design intent is preserved: any third site fails the test and forces deliberate review.
+    - Scope stayed strictly within test infrastructure. No drive-by edits, no tangentially related refactors.
 
 ## QA Report
 *Filled in by the QA agent. See .pm/README.md §6b.*

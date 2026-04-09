@@ -1,0 +1,582 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0D66C623B9AD62E73547777C /* WindowAccessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEA38062895A55A7558E664A /* WindowAccessor.swift */; };
+		25FFCE8A4ECF456554871085 /* MediaPlayer.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B4570D9918E4B47C947C9AD2 /* MediaPlayer.framework */; };
+		40742340B5901FB52EEBE2F6 /* Track.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B24BF6E8AC10977F7D1A95F /* Track.swift */; };
+		491B99342520D36359DD1902 /* tone.aiff in Resources */ = {isa = PBXBuildFile; fileRef = 5FFD55BB6B8D9E97D1B6F74E /* tone.aiff */; };
+		50C7D0AC489A26584D03AA2C /* tone-24.flac in Resources */ = {isa = PBXBuildFile; fileRef = 8B32EEE972AE58CB55DEA253 /* tone-24.flac */; };
+		54B01E0E356827D142DC34BA /* PlayerEnginePublishedAllowlistTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4635322D58D3DDAF57625686 /* PlayerEnginePublishedAllowlistTests.swift */; };
+		55EC8D78AE9102F9A6A2E4DC /* tone.wav in Resources */ = {isa = PBXBuildFile; fileRef = 44FEF5594F65961EDDBBB31B /* tone.wav */; };
+		568E71EC5A50D6289C91D9D7 /* RepoRoot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90978BCD88A235A860921487 /* RepoRoot.swift */; };
+		5A29C2194D6AF4C3D7F7A43E /* Media.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 6248506DDBBB324C2A81CC98 /* Media.xcassets */; };
+		5B0751D15C22874FEBE3E9C1 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 86E3B1386BDA609B97C9ED36 /* AVFoundation.framework */; };
+		5CE0BD38E4A4FDFC99596306 /* FolderWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97EC306C43FD914BC599C1EC /* FolderWatcher.swift */; };
+		60F50ED669493086EA9F5243 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 84F09DE204AABDE1E162BEC5 /* SwiftUI.framework */; };
+		6575572CEE0AA9C89AFFA646 /* tone.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 3A68664A3C96877119596FBB /* tone.mp3 */; };
+		73C34B60BF41FBBAE55CC249 /* tone.m4a in Resources */ = {isa = PBXBuildFile; fileRef = E5846BA09BBDC9B0BE04A637 /* tone.m4a */; };
+		805D70E8036F5C73B50E9868 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4A168BF83F4532F0958F7DC /* ContentView.swift */; };
+		8252AC25F61273EAE05444BF /* AVURLAssetPreciseTimingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBDC5EB8F6A36C7C6C880359 /* AVURLAssetPreciseTimingTests.swift */; };
+		89EB3693CB176E8766A3C160 /* MediaKeyController.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAC498266A32BA1E87452AA0 /* MediaKeyController.swift */; };
+		8C63840AD2D8977F79B31748 /* TableDoubleClick.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11E2792309C6B523291024A1 /* TableDoubleClick.swift */; };
+		99D57BE165ADAF7A605DE405 /* JamBoxApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3380E104DF2B71E285DBBB32 /* JamBoxApp.swift */; };
+		AF54CC8DD777E0D4172C2221 /* Combine.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3EAEB2CA556888F9D9EFBFFD /* Combine.framework */; };
+		B346783C9CF2852A3D0640BF /* SandboxBookmarkBalanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07A0C82A89AB75D58ED37E9C /* SandboxBookmarkBalanceTests.swift */; };
+		B82CABEEF13B56AF081D9D52 /* NowPlayingBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3EEA7F931EBFF07B91B3BE2 /* NowPlayingBar.swift */; };
+		BFB3C44302BD6BEB400F5734 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = F237EA5E68F1532D94847C52 /* Theme.swift */; };
+		CE2DB164CCE50FF00366E019 /* PlayerEngineAVURLAssetCountTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7E6F5D5346503F1DE492154 /* PlayerEngineAVURLAssetCountTests.swift */; };
+		D64BFB1AA83B3C296BA6E11B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 6F00DA726FEFC57E6AB8C12F /* Assets.xcassets */; };
+		D6841F41EB6E8197EA074C82 /* TableScroller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BFC85961416B3ADF2FF3C54 /* TableScroller.swift */; };
+		D6B473CAD3A3EA0D38212F1D /* PlayerEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8C548BD015DA94316FB6398 /* PlayerEngine.swift */; };
+		F2EEAEE61A70EC1DBA3AFF87 /* JamBoxTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21C680D9E39210E3F6CE88C5 /* JamBoxTests.swift */; };
+		F81D0818488401B28D5F8899 /* FileScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B1EED3AF8BFD2D7FE2E6BCF /* FileScanner.swift */; };
+		F9337A846D2453E05ED05A3C /* tone-16.flac in Resources */ = {isa = PBXBuildFile; fileRef = 4F1660E2431E69822AD2B4BB /* tone-16.flac */; };
+		F97BF6718113CC6039F22217 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 852A94A7D8B3786C4C2E9123 /* AppModel.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		CA635E3D0C30D1308BC24C87 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 58208A26298D49B19B83C18F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D14B3586B1CDDF7077E36760;
+			remoteInfo = JamBox;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		07A0C82A89AB75D58ED37E9C /* SandboxBookmarkBalanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SandboxBookmarkBalanceTests.swift; sourceTree = "<group>"; };
+		11E2792309C6B523291024A1 /* TableDoubleClick.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TableDoubleClick.swift; sourceTree = "<group>"; };
+		169045AB1B970A46C3F999B1 /* JamBox.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = JamBox.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		1BFC85961416B3ADF2FF3C54 /* TableScroller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TableScroller.swift; sourceTree = "<group>"; };
+		21C680D9E39210E3F6CE88C5 /* JamBoxTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JamBoxTests.swift; sourceTree = "<group>"; };
+		3380E104DF2B71E285DBBB32 /* JamBoxApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JamBoxApp.swift; sourceTree = "<group>"; };
+		3A68664A3C96877119596FBB /* tone.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = tone.mp3; sourceTree = "<group>"; };
+		3EAEB2CA556888F9D9EFBFFD /* Combine.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = Combine.framework; sourceTree = "<group>"; };
+		44FEF5594F65961EDDBBB31B /* tone.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = tone.wav; sourceTree = "<group>"; };
+		4635322D58D3DDAF57625686 /* PlayerEnginePublishedAllowlistTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerEnginePublishedAllowlistTests.swift; sourceTree = "<group>"; };
+		4B1EED3AF8BFD2D7FE2E6BCF /* FileScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileScanner.swift; sourceTree = "<group>"; };
+		4B24BF6E8AC10977F7D1A95F /* Track.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Track.swift; sourceTree = "<group>"; };
+		4F1660E2431E69822AD2B4BB /* tone-16.flac */ = {isa = PBXFileReference; path = "tone-16.flac"; sourceTree = "<group>"; };
+		5FFD55BB6B8D9E97D1B6F74E /* tone.aiff */ = {isa = PBXFileReference; lastKnownFileType = audio.aiff; path = tone.aiff; sourceTree = "<group>"; };
+		6248506DDBBB324C2A81CC98 /* Media.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Media.xcassets; sourceTree = "<group>"; };
+		6F00DA726FEFC57E6AB8C12F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		817BCC0D3E34484A65BB1BAB /* JamBoxTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = JamBoxTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		84F09DE204AABDE1E162BEC5 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = SwiftUI.framework; sourceTree = "<group>"; };
+		852A94A7D8B3786C4C2E9123 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		86E3B1386BDA609B97C9ED36 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = AVFoundation.framework; sourceTree = "<group>"; };
+		8B32EEE972AE58CB55DEA253 /* tone-24.flac */ = {isa = PBXFileReference; path = "tone-24.flac"; sourceTree = "<group>"; };
+		90978BCD88A235A860921487 /* RepoRoot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RepoRoot.swift; sourceTree = "<group>"; };
+		97EC306C43FD914BC599C1EC /* FolderWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderWatcher.swift; sourceTree = "<group>"; };
+		A4A168BF83F4532F0958F7DC /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		A8C548BD015DA94316FB6398 /* PlayerEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerEngine.swift; sourceTree = "<group>"; };
+		B4570D9918E4B47C947C9AD2 /* MediaPlayer.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = MediaPlayer.framework; sourceTree = "<group>"; };
+		E5846BA09BBDC9B0BE04A637 /* tone.m4a */ = {isa = PBXFileReference; path = tone.m4a; sourceTree = "<group>"; };
+		EBDC5EB8F6A36C7C6C880359 /* AVURLAssetPreciseTimingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AVURLAssetPreciseTimingTests.swift; sourceTree = "<group>"; };
+		EEA38062895A55A7558E664A /* WindowAccessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowAccessor.swift; sourceTree = "<group>"; };
+		F237EA5E68F1532D94847C52 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		F3EEA7F931EBFF07B91B3BE2 /* NowPlayingBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NowPlayingBar.swift; sourceTree = "<group>"; };
+		F7E6F5D5346503F1DE492154 /* PlayerEngineAVURLAssetCountTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerEngineAVURLAssetCountTests.swift; sourceTree = "<group>"; };
+		FAC498266A32BA1E87452AA0 /* MediaKeyController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaKeyController.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		31914D61E3CDF40BF967DDEA /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5B0751D15C22874FEBE3E9C1 /* AVFoundation.framework in Frameworks */,
+				AF54CC8DD777E0D4172C2221 /* Combine.framework in Frameworks */,
+				60F50ED669493086EA9F5243 /* SwiftUI.framework in Frameworks */,
+				25FFCE8A4ECF456554871085 /* MediaPlayer.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		23D48B739552715C946EE774 = {
+			isa = PBXGroup;
+			children = (
+				AD498A535640256F60A01148 /* JamBox */,
+				E34C2A78E2BDCE301FF11D43 /* JamBoxTests */,
+				66F8357B61ABE001F218C3D0 /* Frameworks */,
+				4118A85BB468F9C8F22F6AE5 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		4118A85BB468F9C8F22F6AE5 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				169045AB1B970A46C3F999B1 /* JamBox.app */,
+				817BCC0D3E34484A65BB1BAB /* JamBoxTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		66F8357B61ABE001F218C3D0 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				86E3B1386BDA609B97C9ED36 /* AVFoundation.framework */,
+				3EAEB2CA556888F9D9EFBFFD /* Combine.framework */,
+				B4570D9918E4B47C947C9AD2 /* MediaPlayer.framework */,
+				84F09DE204AABDE1E162BEC5 /* SwiftUI.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		70A69535494291EC56F853D4 /* Fixtures */ = {
+			isa = PBXGroup;
+			children = (
+				4F1660E2431E69822AD2B4BB /* tone-16.flac */,
+				8B32EEE972AE58CB55DEA253 /* tone-24.flac */,
+				5FFD55BB6B8D9E97D1B6F74E /* tone.aiff */,
+				E5846BA09BBDC9B0BE04A637 /* tone.m4a */,
+				3A68664A3C96877119596FBB /* tone.mp3 */,
+				44FEF5594F65961EDDBBB31B /* tone.wav */,
+			);
+			path = Fixtures;
+			sourceTree = "<group>";
+		};
+		AD498A535640256F60A01148 /* JamBox */ = {
+			isa = PBXGroup;
+			children = (
+				852A94A7D8B3786C4C2E9123 /* AppModel.swift */,
+				6F00DA726FEFC57E6AB8C12F /* Assets.xcassets */,
+				A4A168BF83F4532F0958F7DC /* ContentView.swift */,
+				4B1EED3AF8BFD2D7FE2E6BCF /* FileScanner.swift */,
+				97EC306C43FD914BC599C1EC /* FolderWatcher.swift */,
+				3380E104DF2B71E285DBBB32 /* JamBoxApp.swift */,
+				6248506DDBBB324C2A81CC98 /* Media.xcassets */,
+				FAC498266A32BA1E87452AA0 /* MediaKeyController.swift */,
+				F3EEA7F931EBFF07B91B3BE2 /* NowPlayingBar.swift */,
+				A8C548BD015DA94316FB6398 /* PlayerEngine.swift */,
+				11E2792309C6B523291024A1 /* TableDoubleClick.swift */,
+				1BFC85961416B3ADF2FF3C54 /* TableScroller.swift */,
+				F237EA5E68F1532D94847C52 /* Theme.swift */,
+				4B24BF6E8AC10977F7D1A95F /* Track.swift */,
+				EEA38062895A55A7558E664A /* WindowAccessor.swift */,
+			);
+			path = JamBox;
+			sourceTree = "<group>";
+		};
+		E34C2A78E2BDCE301FF11D43 /* JamBoxTests */ = {
+			isa = PBXGroup;
+			children = (
+				21C680D9E39210E3F6CE88C5 /* JamBoxTests.swift */,
+				70A69535494291EC56F853D4 /* Fixtures */,
+				F7FABC5D14662A3773149FE8 /* StaticChecks */,
+			);
+			path = JamBoxTests;
+			sourceTree = "<group>";
+		};
+		F7FABC5D14662A3773149FE8 /* StaticChecks */ = {
+			isa = PBXGroup;
+			children = (
+				EBDC5EB8F6A36C7C6C880359 /* AVURLAssetPreciseTimingTests.swift */,
+				F7E6F5D5346503F1DE492154 /* PlayerEngineAVURLAssetCountTests.swift */,
+				4635322D58D3DDAF57625686 /* PlayerEnginePublishedAllowlistTests.swift */,
+				90978BCD88A235A860921487 /* RepoRoot.swift */,
+				07A0C82A89AB75D58ED37E9C /* SandboxBookmarkBalanceTests.swift */,
+			);
+			path = StaticChecks;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		987D895A40E4E88D05D04220 /* JamBoxTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 9E5B43A2BC1F2485E9881C50 /* Build configuration list for PBXNativeTarget "JamBoxTests" */;
+			buildPhases = (
+				18EBBD4F99E33B1D91416FAB /* Sources */,
+				9530AE5C444DCB6E971FE664 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				3F3FE875A93A6B8D8E7310E0 /* PBXTargetDependency */,
+			);
+			name = JamBoxTests;
+			packageProductDependencies = (
+			);
+			productName = JamBoxTests;
+			productReference = 817BCC0D3E34484A65BB1BAB /* JamBoxTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		D14B3586B1CDDF7077E36760 /* JamBox */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 6097AD31E12557964746688E /* Build configuration list for PBXNativeTarget "JamBox" */;
+			buildPhases = (
+				46B7E5DB199CDA30BFCD3647 /* Sources */,
+				927EA8C42165C504809DD062 /* Resources */,
+				31914D61E3CDF40BF967DDEA /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = JamBox;
+			packageProductDependencies = (
+			);
+			productName = JamBox;
+			productReference = 169045AB1B970A46C3F999B1 /* JamBox.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		58208A26298D49B19B83C18F /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					D14B3586B1CDDF7077E36760 = {
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = A341967394BD0E5B36016555 /* Build configuration list for PBXProject "JamBox" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 23D48B739552715C946EE774;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 4118A85BB468F9C8F22F6AE5 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				D14B3586B1CDDF7077E36760 /* JamBox */,
+				987D895A40E4E88D05D04220 /* JamBoxTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		927EA8C42165C504809DD062 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D64BFB1AA83B3C296BA6E11B /* Assets.xcassets in Resources */,
+				5A29C2194D6AF4C3D7F7A43E /* Media.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		9530AE5C444DCB6E971FE664 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F9337A846D2453E05ED05A3C /* tone-16.flac in Resources */,
+				50C7D0AC489A26584D03AA2C /* tone-24.flac in Resources */,
+				491B99342520D36359DD1902 /* tone.aiff in Resources */,
+				73C34B60BF41FBBAE55CC249 /* tone.m4a in Resources */,
+				6575572CEE0AA9C89AFFA646 /* tone.mp3 in Resources */,
+				55EC8D78AE9102F9A6A2E4DC /* tone.wav in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		18EBBD4F99E33B1D91416FAB /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8252AC25F61273EAE05444BF /* AVURLAssetPreciseTimingTests.swift in Sources */,
+				F2EEAEE61A70EC1DBA3AFF87 /* JamBoxTests.swift in Sources */,
+				CE2DB164CCE50FF00366E019 /* PlayerEngineAVURLAssetCountTests.swift in Sources */,
+				54B01E0E356827D142DC34BA /* PlayerEnginePublishedAllowlistTests.swift in Sources */,
+				568E71EC5A50D6289C91D9D7 /* RepoRoot.swift in Sources */,
+				B346783C9CF2852A3D0640BF /* SandboxBookmarkBalanceTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		46B7E5DB199CDA30BFCD3647 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F97BF6718113CC6039F22217 /* AppModel.swift in Sources */,
+				805D70E8036F5C73B50E9868 /* ContentView.swift in Sources */,
+				F81D0818488401B28D5F8899 /* FileScanner.swift in Sources */,
+				5CE0BD38E4A4FDFC99596306 /* FolderWatcher.swift in Sources */,
+				99D57BE165ADAF7A605DE405 /* JamBoxApp.swift in Sources */,
+				89EB3693CB176E8766A3C160 /* MediaKeyController.swift in Sources */,
+				B82CABEEF13B56AF081D9D52 /* NowPlayingBar.swift in Sources */,
+				D6B473CAD3A3EA0D38212F1D /* PlayerEngine.swift in Sources */,
+				8C63840AD2D8977F79B31748 /* TableDoubleClick.swift in Sources */,
+				D6841F41EB6E8197EA074C82 /* TableScroller.swift in Sources */,
+				BFB3C44302BD6BEB400F5734 /* Theme.swift in Sources */,
+				40742340B5901FB52EEBE2F6 /* Track.swift in Sources */,
+				0D66C623B9AD62E73547777C /* WindowAccessor.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		3F3FE875A93A6B8D8E7310E0 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D14B3586B1CDDF7077E36760 /* JamBox */;
+			targetProxy = CA635E3D0C30D1308BC24C87 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		12D29B75508011F5B2029362 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		18FCC24A8F79A3B341C5CE33 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.jambox.app.tests;
+				PRODUCT_NAME = JamBoxTests;
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/JamBox.app/Contents/MacOS/JamBox";
+			};
+			name = Debug;
+		};
+		5A62A2B21B0A37E1BE0E3B4C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		910D18D75BDB1CE7E67EEC26 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.jambox.app.tests;
+				PRODUCT_NAME = JamBoxTests;
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/JamBox.app/Contents/MacOS/JamBox";
+			};
+			name = Release;
+		};
+		9E07EB3AE5A07A6AA5DD4B97 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = JamBox/JamBox.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 4;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\".\"",
+				);
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_GENERATION_MODE = GeneratedByXcode;
+				INFOPLIST_KEY_CFBundleDisplayName = JamBox;
+				INFOPLIST_KEY_CFBundleIconName = AppIcon;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.3;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jambox.app;
+				PRODUCT_NAME = JamBox;
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+			};
+			name = Release;
+		};
+		F5659AE69345013165AF162D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = JamBox/JamBox.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 4;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\".\"",
+				);
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_GENERATION_MODE = GeneratedByXcode;
+				INFOPLIST_KEY_CFBundleDisplayName = JamBox;
+				INFOPLIST_KEY_CFBundleIconName = AppIcon;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 1.3;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jambox.app;
+				PRODUCT_NAME = JamBox;
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		6097AD31E12557964746688E /* Build configuration list for PBXNativeTarget "JamBox" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F5659AE69345013165AF162D /* Debug */,
+				9E07EB3AE5A07A6AA5DD4B97 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		9E5B43A2BC1F2485E9881C50 /* Build configuration list for PBXNativeTarget "JamBoxTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				18FCC24A8F79A3B341C5CE33 /* Debug */,
+				910D18D75BDB1CE7E67EEC26 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		A341967394BD0E5B36016555 /* Build configuration list for PBXProject "JamBox" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5A62A2B21B0A37E1BE0E3B4C /* Debug */,
+				12D29B75508011F5B2029362 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 58208A26298D49B19B83C18F /* Project object */;
+}

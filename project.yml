@@ -37,3 +37,25 @@ targets:
         embed: false
       - framework: MediaPlayer.framework
         embed: false
+    scheme:
+      testTargets:
+        - JamBoxTests
+      gatherCoverageData: false
+
+  JamBoxTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: JamBoxTests
+        excludes:
+          - "Fixtures/generate.sh"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.jambox.app.tests
+        PRODUCT_NAME: JamBoxTests
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_EMIT_LOC_STRINGS: "YES"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/JamBox.app/Contents/MacOS/JamBox"
+    dependencies:
+      - target: JamBox
