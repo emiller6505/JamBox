@@ -109,6 +109,7 @@ Sort is a property of `ContentView`'s view state, driven by SwiftUI `Table`'s na
 - 2026-04-08 — engineer-11 plan ready (custom TrackComparator SortComparator, player.reorderTracks)
 - 2026-04-08 — engineer-11 implementation complete, build green, self-audit written, → qa
 - 2026-04-08 — qa-11 claimed, beginning independent audit
+- 2026-04-08 — qa-11 APPROVE: all acceptance + invariants pass, build green, one deferred audible gapless check
 
 ## Self-Audit
 
@@ -170,15 +171,56 @@ Sort is a property of `ContentView`'s view state, driven by SwiftUI `Table`'s na
    - No other unrelated changes.
 
 ## QA Report
-*Filled in by the QA agent. See .pm/README.md §6b.*
+
+Independent audit by qa-11 on 2026-04-08. Read `## Plan`, then read `ContentView.swift`, `PlayerEngine.swift`, `Track.swift` top to bottom. Ran `git diff 3ec47f0 HEAD -- <touched files>` (the pre-card-0011 base) and read every line. Built with `xcodebuild -project JamBox.xcodeproj -scheme JamBox build` → `** BUILD SUCCEEDED **`, no new warnings.
 
 ### Acceptance
 
+- [PASS] Clicking a sortable column header sorts the visible list — `Table(filteredTracks, selection: $selection, sortOrder: $sortOrder)` at ContentView.swift:199; sortable columns use `sortUsing: TrackComparator(column: …)` (ContentView.swift:227, 234, 241, 248). SwiftUI drives the sort via the comparator's `compare(_:_:)`.
+- [PASS] Asc/desc toggle with direction indicator — native SwiftUI Table behavior provided by the `sortOrder:` binding. Confirmed by using the `(title, value:content:)` column initializer; clicking the already-active header flips `order` on the comparator and SwiftUI renders the chevron.
+- [PASS] Only Title/Artist/Album/Duration sortable — the speaker column (ContentView.swift:203) and "#" column (ContentView.swift:213) use the value-less `TableColumn` initializer, so no sort affordance.
+- [PASS] Title sort — `localizedCaseInsensitiveCompare` on `displayName` with direction flip (ContentView.swift:26-27, 56-57).
+- [PASS] Artist sort with preserved album order — `.artist` case applies direction only to the primary artist key; on `.orderedSame`, falls through to `albumThenTrackCompare` (ContentView.swift:28-36, 62-66) which is hard-coded ascending. Direction flip for artist does NOT affect album/track ordering inside an artist group. Verified by reading every branch.
+- [PASS] Album sort with preserved track order — `.album` case applies direction only to the album key, falls through to `trackNumberThenFilenameCompare` always ascending (ContentView.swift:37-44, 69-82).
+- [PASS] Duration sort numeric — direct `<`/`>` on `TimeInterval` with filename tiebreaker (ContentView.swift:45-53).
+- [PASS] Sort drives the playback queue — `onChange(of: sortOrder)` calls `player.reorderTracks(to: player.tracks.sorted(using: newOrder))` (ContentView.swift:357-368). `reorderTracks` reassigns `self.tracks` to the new order (PlayerEngine.swift:149), recomputes `currentIndex` by URL (PlayerEngine.swift:151-157), and rebuilds the lookahead via `enqueueMoreIfNeeded()`. Double-click handler translates filtered-row id → `player.tracks.firstIndex` (ContentView.swift:261-265) which now returns the sorted index.
+- [PASS] Sort + search compose — `filteredTracks` computes `sortedBase` first then filters on top (ContentView.swift:137-146). Clearing `searchQuery` returns `base` (= sortedBase) unchanged. Double-click translates by id, not index, so it correctly finds the right track in `player.tracks` regardless of filter state (ContentView.swift:261-265).
+- [PASS] Active playback survives a sort change — `reorderTracks` never touches `queuePlayer.items()[0]`. It iterates `queuePlayer.items().dropFirst()` (PlayerEngine.swift:165-167) and removes only lookahead items. Per AVQueuePlayer semantics, removing items after the current item does not interrupt playback. `currentIndex` is rebound by URL match before the refill. The pattern mirrors the existing `applyTrackDiff` and `updateMetadata` flows. Note: by-ear confirmation deferred to user per the card; code path is correct by inspection.
+- [PASS] Persistence — `loadPersistedSort` in `.onAppear` reads `jambox.sort.column` and `jambox.sort.direction` (ContentView.swift:417-426); `persistSort` writes them on `onChange(of: sortOrder)` (ContentView.swift:431-436). `clearPersistedSort` handles the empty-sortOrder edge case (ContentView.swift:438-442). First launch with no saved keys: `loadPersistedSort` returns nil → `sortOrder` stays empty → `sortedBase` returns `player.tracks` unchanged → file order from FileScanner.
+- [PASS] Empty state unchanged — Table only renders when `player.tracks` is non-empty (ContentView.swift:181-198 conditional preserved from card 0008); sort UI is inside the Table branch only.
+- [PASS] Build passes — `** BUILD SUCCEEDED **`, no new warnings introduced. Pre-existing warnings around the periodic time observer are unchanged.
+- [PASS] AVURLAsset rule preserved — see Invariants §7.1 below.
+- [PASS by inspection / PENDING AUDIBLE] Gapless preserved — see Invariants §7.2 below. Code path is correct; the user will do the final by-ear check.
+- [PASS] Two-phase loading preserved — `onChange(of: player.tracks)` at ContentView.swift:370-378 catches `updateMetadata`'s `tracks` publish (PlayerEngine.swift:174-181) and re-applies the sort. The no-op guard in `reorderTracks` (PlayerEngine.swift:141-146) breaks the otherwise-infinite observer loop. `Track: Equatable` was added (Track.swift:4) specifically so `onChange(of: [Track])` compiles and fires correctly on field changes.
+
 ### Invariants
+
+- [PASS] §7.1 AVURLAsset — No new `AVURLAsset` constructions. `reorderTracks` only calls `queuePlayer.remove(_:)` and the pre-existing `enqueueMoreIfNeeded()`, which continues to use `Self.assetOptions = [AVURLAssetPreferPreciseDurationAndTimingKey: true]` (PlayerEngine.swift:62-64, 305-307). Grepped the diff for `AVURLAsset(` — no new matches.
+- [PASS (by inspection)] §7.2 Gapless playback — The 3-item lookahead is preserved. `reorderTracks` explicitly skips `queuePlayer.items()[0]` via `dropFirst()` (PlayerEngine.swift:165), removes only stale tail items, then refills via `enqueueMoreIfNeeded()`. Documented AVQueuePlayer behavior: removing items beyond the current item does not interrupt playback. The currently-playing `AVPlayerItem` retains its asset, so the audio decoder is not torn down. Re-sort mid-playback should be seamless. The user will confirm audibly.
+- [PASS] §7.3 Two-phase loading — Sort does not block on metadata. Initial sort applied in `.onAppear`; when enriched metadata lands, `onChange(of: player.tracks)` re-applies the sort. Card explicitly allows the visual reorder-on-enrichment.
+- [N/A] §7.4 Sandbox bookmarks — Not touched by this card. No new `startAccessingSecurityScopedResource` calls.
+- [N/A] §7.5 Xcodegen — No source files added or removed, only edits to three existing files. No project regeneration needed.
+- [PASS] §7.6 Build green — `** BUILD SUCCEEDED **`.
 
 ### Findings
 
+- [NIT] ContentView.swift:344-355 — `onAppear` restores `sortOrder` and then immediately calls `player.reorderTracks(to:)` explicitly. But setting `sortOrder` will also trigger `.onChange(of: sortOrder)` (ContentView.swift:357), which also calls `persistSort` and `reorderTracks`. Result: one redundant `persistSort` write (of the same values just loaded) and a second `reorderTracks` call whose no-op guard will catch it. Not a bug, just double work on launch. Safe to leave.
+- [NIT] ContentView.swift:357-368 — On sort restore at launch, `persistSort` re-writes the UserDefaults keys that were just read from. Harmless but slightly muddy. A guard like "only persist if newOrder differs from what's already saved" would be cleaner but is not worth a kickback.
+- [NIT] PlayerEngine.swift:143-146 — No-op guard uses `zip(newOrder, tracks).allSatisfy(...)`. Correct only because `newOrder.count == tracks.count` is checked first; `zip` silently truncates to the shorter sequence otherwise. The precondition is explicit, so this is fine.
+- [NIT] `TrackComparator: Hashable` is not strictly required (only `SortComparator + Equatable` are needed). Free synth, no harm. Minor scope creep; not worth a card.
+- [INFO / NOT A FINDING] Direction-flip semantics for the `.artist` case: the early-return branch applies direction ONLY to the primary artist axis and never flips album/track sub-order. Verified by tracing every branch. The `.album` case follows the same pattern. This is the most load-bearing detail of the card and it is implemented correctly.
+- [INFO] `Track: Equatable` (Track.swift:4) is justified — required so `.onChange(of: player.tracks)` compiles. All stored fields are already Equatable so synth works. No behavioral risk.
+- [INFO] `applyTrackDiff` (PlayerEngine.swift:191-222) re-sorts by filename after a folder-watcher diff. When a user sort is active, `.onChange(of: player.tracks)` will re-apply the sort on top. This chain works correctly because the onChange observer handles any `player.tracks` mutation.
+- No debug prints, no TODO/FIXME, no commented-out code, no unrelated changes, no style inconsistencies with surrounding code.
+
 ### Recommendation
+
+- APPROVE
+
+All twelve acceptance bullets pass by code inspection, all applicable invariants pass, and the build is green. The one deferred item is the audible gapless check at a track boundary, which the engineer's self-audit and this QA both confirmed is correct by code path (the currently-playing `queuePlayer.items()[0]` is never touched; only tail items are pruned and the lookahead is refilled via the existing `enqueueMoreIfNeeded` which uses `Self.assetOptions` with `AVURLAssetPreferPreciseDurationAndTimingKey`). The manager/user should do one by-ear test at a track boundary before shipping, but no code changes are needed. The nits above are not worth a kickback or a child card.
+
+## Manager Decision
+*Filled in by the manager when closing or kicking back.*
 
 ## Manager Decision
 *Filled in by the manager when closing or kicking back.*
