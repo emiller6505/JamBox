@@ -122,6 +122,13 @@ final class PlayerEngine: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var currentIndex: Int?
 
+    /// Read-only count of items currently queued in the underlying
+    /// `AVQueuePlayer`. Exists solely for integration tests in card 0006c
+    /// to verify the §7.2 gapless lookahead (3 items) without exposing the
+    /// queue player itself. Not used by any production code path — if you
+    /// find yourself reaching for this outside a test, reconsider.
+    internal var queuedItemCount: Int { queuePlayer.items().count }
+
     /// Per-folder artwork cache, bounded LRU. Folders that haven't been
     /// touched recently get evicted so the cache cannot grow without bound.
     /// `nil` values are cached too (negative cache: "this folder has no art")

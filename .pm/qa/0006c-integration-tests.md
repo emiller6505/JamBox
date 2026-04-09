@@ -151,8 +151,151 @@ None.
 ## Log
 - 2026-04-08 — manager created card in backlog/, depends on 0006a
 - 2026-04-08 — engineer claimed, → in-progress
+- 2026-04-08 — plan committed
+- 2026-04-08 — impl + self-audit complete, all 43 tests green (integration suite 9 tests, 2.47s), → qa
 
 ## Self-Audit
+
+### 1. Re-read every modified file top to bottom
+
+- `JamBox/PlayerEngine.swift` — only change is the new `internal var
+  queuedItemCount` accessor (one expression, no state, not called from
+  production code). No dead code, no debug prints, no commented blocks.
+- `JamBoxTests/Integration/PlayerEngineIntegrationTests.swift` — 7
+  tests. Each test pauses at end to avoid cross-test audio bleed. No
+  `Thread.sleep`, no unconditional `RunLoop.run(until:)` except one
+  bounded 0.3s tick in the pause/resume test where we specifically
+  want wall-clock elapsed time with playback paused. Helpers:
+  `tracks(_:)`, `waitFor(_:timeout:_:)`, `waitForPublished(...)`.
+- `JamBoxTests/Integration/AppModelResumeIntegrationTests.swift` — 2
+  tests. Both use Combine sinks on `engine.clock.$duration` to wait
+  for the async clamp-step to settle.
+
+### 2. Acceptance bullet walk
+
+1. **play(startingAt:) starts playback within 2s timeout, asserts
+   isPlaying/currentTrack/clock.duration>0** — PASS,
+   `PlayerEngineIntegrationTests.swift:77-95` (`testPlayStartsPlaybackWithinTimeout`).
+2. **§7.2 gapless lookahead — 5 tracks → queuePlayer.items().count == 3** — PASS,
+   `PlayerEngineIntegrationTests.swift:98-119` (`testGaplessLookaheadEqualsThree`),
+   via new `queuedItemCount` accessor.
+3. **Natural advance end-of-track without manual intervention** — PASS,
+   `PlayerEngineIntegrationTests.swift:122-143` (`testNaturalAdvanceAcrossTracks`)
+   using two 1s fixtures and a 5s expectation timeout.
+4. **pause/resume preserves position within 0.1s** — PASS,
+   `PlayerEngineIntegrationTests.swift:146-175` (`testPauseResumePreservesPosition`).
+5. **seek(to:) updates clock.position** — PASS,
+   `PlayerEngineIntegrationTests.swift:178-197` (`testSeekUpdatesClockPosition`).
+6. **§7.1 FLAC duration regression — 24-bit FLAC within 0.1s of actual** — PASS,
+   `PlayerEngineIntegrationTests.swift:202-219` (`testFLACDurationMatchesActual`).
+7. **Card 0020 regression — 24-bit FLAC bitDepth == 24** — PASS,
+   `PlayerEngineIntegrationTests.swift:222-243` (`testFLACBitDepthFallback`).
+8. **Card 0012 resume regression — saved state → restored track +
+   position, paused** — PASS,
+   `AppModelResumeIntegrationTests.swift:31-84`
+   (`testResumeRestoresTrackAndPositionPaused`), plus bonus coverage for
+   the clamp branch at `:90-123` (`testResumeClampsOvershotPosition`).
+9. **All tests pass via `xcodebuild test`** — PASS, 43 tests, 0 failures.
+10. **Test runtime documented; integration suite under 30s** — PASS,
+   integration suite = 9 tests, 2.47s wall clock. Full suite = 43 tests,
+   2.62s.
+11. **Build green, no new warnings** — PASS, `xcodebuild build`
+   returned `** BUILD SUCCEEDED **` with no warnings attributable to
+   this card.
+12. **§7 invariants preserved** — see step 4 below.
+
+### 3. Build result
+
+```
+xcodebuild -project JamBox.xcodeproj -scheme JamBox test
+** TEST SUCCEEDED **
+  Executed 43 tests, with 0 failures (0 unexpected) in 2.617 (2.638) seconds
+
+xcodebuild -project JamBox.xcodeproj -scheme JamBox build
+** BUILD SUCCEEDED **
+```
+
+### 4. §7 invariants
+
+- **§7.1 AVURLAsset precise-timing.** PASS. No new `AVURLAsset(...)`
+  construction sites. Tests drive playback via `PlayerEngine.play`/
+  `PlayerEngine.resume`, which route through the existing
+  `makeAssetItem` helper. The static check
+  `PlayerEngineAVURLAssetCountTests` still asserts `== 2` and still
+  passes. Layer 1 static check `AVURLAssetPreciseTimingTests` still
+  passes.
+- **§7.2 Gapless playback.** PASS. No changes near `enqueueMoreIfNeeded`
+  or queue management. The new `queuedItemCount` is a pure read-only
+  accessor — it cannot mutate queue state. `testGaplessLookaheadEqualsThree`
+  adds explicit regression coverage.
+- **§7.3 Two-phase loading.** N/A. This card is about playback pipeline,
+  not metadata loading. `testGaplessLookaheadEqualsThree` and friends
+  do use the cheap `Track(url:)` init, which is the first-phase form —
+  the engine handles that form without needing metadata, which
+  implicitly confirms the two-phase contract.
+- **§7.4 Sandbox bookmarks.** N/A. Tests do not touch security-scoped
+  resources (fixtures are bundled in the test bundle, not accessed via
+  bookmarks). `SandboxBookmarkBalanceTests` still passes.
+- **§7.5 Xcode project regen.** Done. Ran `xcodegen generate` once
+  after all new test files were in place.
+- **§7.6 Build green.** See step 3.
+
+### 5. Hostile diff review
+
+```
+JamBox/PlayerEngine.swift
+  + internal var queuedItemCount: Int { queuePlayer.items().count }
+  (6 lines of doc comment + 1 line of code)
+```
+An angry reviewer would ask: "Why is this internal, not private? It's
+production code existing only for a test." Answer: flagged in step 7.
+
+```
+JamBoxTests/Integration/PlayerEngineIntegrationTests.swift  (NEW)
+JamBoxTests/Integration/AppModelResumeIntegrationTests.swift  (NEW)
+```
+Both files live under `JamBoxTests/` so they're scoped to the test
+target; nothing ships in the production app bundle. `@testable import
+JamBox` is standard for internal access. Helpers are `private` to
+avoid leakage.
+
+`JamBox.xcodeproj/project.pbxproj` — regenerated by xcodegen; includes
+file references for the two new test files and the new `Integration/`
+group. No source-of-truth changes needed (project.yml is unchanged).
+
+### 6. Touched-files reconciliation
+
+`touches:` frontmatter says:
+- `JamBoxTests/` ✓ (two new files under `JamBoxTests/Integration/`)
+- `JamBox/PlayerEngine.swift` ✓ (new `queuedItemCount` accessor)
+
+Also changed (not in `touches:` but mechanical):
+- `JamBox.xcodeproj/project.pbxproj` — regenerated by xcodegen; standard
+  and expected whenever test sources are added. Not worth listing in
+  `touches:`.
+
+No update needed.
+
+### 7. Scope check / production-code change flag
+
+**PRODUCTION CODE CHANGE** (dispatch brief explicitly greenlit this,
+and asked for it to be flagged here):
+
+- Added `internal var queuedItemCount: Int { queuePlayer.items().count }`
+  to `PlayerEngine` (PlayerEngine.swift, lines 126-131). Justification:
+  acceptance bullet 2 requires inspecting `queuePlayer.items().count`,
+  but `queuePlayer` is private. Options considered:
+  1. Mark `queuePlayer` itself `internal` — exposes far more surface
+     than needed.
+  2. Use a key-value-coding hack from the test — brittle and ugly.
+  3. Add a read-only `internal` computed property — minimal surface,
+     zero effect on production behavior, documented as test-only.
+  Option 3 was chosen. The property has no setter, no side effects,
+  allocates nothing, and is not called from any production code path.
+  The doc comment explicitly warns not to use it outside tests.
+
+Nothing else out of scope. No unrelated refactors, no cleanup drift.
+No new dependencies. No new warnings.
 
 ## QA Report
 
