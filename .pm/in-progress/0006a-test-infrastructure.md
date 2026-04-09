@@ -5,7 +5,7 @@ created: 2026-04-08
 needs_designer: false
 designer: null
 design_review: null
-engineer: null
+engineer: engineer-06a
 qa: null
 parent: 0006
 priority: P1
@@ -77,6 +77,7 @@ This card is the first of four split from card 0006 (automated test coverage), r
 
 ## Log
 - 2026-04-08 — manager split card 0006 into 0006a/b/c/d; created this card in ready/
+- 2026-04-08 — engineer-06a claimed card, moved to in-progress
 
 ## Self-Audit
 *Filled in by the engineer before handing off to QA. See .pm/README.md §6.*
