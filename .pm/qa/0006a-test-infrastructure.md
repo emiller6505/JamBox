@@ -6,7 +6,7 @@ needs_designer: false
 designer: null
 design_review: null
 engineer: engineer-06a
-qa: null
+qa: qa-06a
 parent: 0006
 priority: P1
 estimate: M
@@ -113,6 +113,7 @@ This card is the first of four split from card 0006 (automated test coverage), r
 - 2026-04-08 — engineer committed plan (`pm: 0006a plan ready`)
 - 2026-04-08 — engineer generated all 6 fixtures + committed generate.sh (`pm: 0006a fixtures generated`)
 - 2026-04-09 — engineer resumed after 529 mid-session; completed test target wiring, placeholder green, Layer 1 static checks (4 files + RepoRoot helper), TESTING.md, CLAUDE.md update, regenerated+force-added JamBox.xcodeproj. All 5 tests pass locally. Moved to qa/.
+- 2026-04-08 — qa-06a started independent audit (`pm: 0006a qa start`)
 
 ## Self-Audit
 *Filled in by the engineer before handing off to QA. See .pm/README.md §6.*
