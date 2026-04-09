@@ -1,0 +1,227 @@
+---
+id: 0012
+title: Resume playback position on launch
+created: 2026-04-08
+needs_designer: true
+designer: designer-12
+design_review: null
+engineer: null
+qa: null
+parent: null
+priority: P2
+estimate: S
+depends_on: []
+touches:
+  - JamBox/PlayerEngine.swift
+  - JamBox/AppModel.swift
+  - JamBox/ContentView.swift
+acceptance:
+  - On app quit, JamBox saves the currently-playing track's URL and the live playback position. If nothing is playing, it saves nothing (or clears any prior saved state).
+  - During playback, the saved position is updated on a throttled timer (~5s cadence) so a hard crash doesn't lose more than a few seconds of progress.
+  - On next launch, after the folder bookmark is restored and tracks are loaded, JamBox locates the saved track by URL inside the restored folder, builds an `AVPlayerItem` via the existing `assetOptions` (preserving §7.1), seeks to the saved position, and presents the now-playing bar populated — but playback stays PAUSED.
+  - One press of space (or click of the play button) resumes from the saved position. The first transition into the next track after resume is gapless (the lookahead must be filled before the user presses play).
+  - Saved track no longer exists at relaunch (file deleted, folder bookmark stale, file outside the restored folder, etc.) → silent clear of the saved state. No error modal, no log spam. App opens in its normal first-launch state.
+  - Saved position exceeds the asset's actual duration (file was re-encoded shorter between sessions) → clamp to `[0, duration]`. Trust the asset's async-loaded duration over the saved value.
+  - The restored track's metadata is the cheap `init(url:)` form initially; when `updateMetadata` lands the enriched metadata, the swap happens in-place without disrupting the already-queued `AVPlayerItem` (verify §7.3 still holds for this code path).
+  - No new `AVURLAsset` construction site introduced. The resume code path goes through `Self.assetOptions` (extract a private helper if tempted to duplicate).
+  - All `startAccessingSecurityScopedResource` calls remain balanced with `stopAccessingSecurityScopedResource` (§7.4). The resume path uses the existing folder bookmark — no new per-track bookmark.
+  - Saved-state payload includes a `version: Int` schema field. On decode, mismatched or missing version is treated as "no saved state" (silent clear). This future-proofs schema evolution without a migration burden today.
+  - The throttled ~5s save timer only fires while `player.isPlaying == true`. It does NOT write UserDefaults while playback is paused. The save-on-quit path is independent and still captures the final state regardless of play/pause.
+  - build passes: xcodebuild -project JamBox.xcodeproj -scheme JamBox build
+  - §7.1 AVURLAsset preserved
+  - §7.2 Gapless playback preserved (verify by ear: resume, press play, listen for the first track→next transition)
+  - §7.3 Two-phase loading preserved
+  - §7.4 Sandbox bookmarks balanced
+---
+
+## Context
+
+User picked this from a designer brainstorm of new feature ideas (2026-04-08). The two-card slate (0012 + 0013) is "this app respects my time and tells me what I need to know" — quiet, considerate UX that signals JamBox is for users who care.
+
+User quote (designer brainstorm): *"I was 45 minutes into a 70-minute mix, closed my laptop, opened it three days later — I want it to remember."*
+
+The engineer's selection memo flagged this as the lowest-risk way to get high-leverage user value: every seam already exists. `PlayerEngine.play(startingAt:)` is the single asset-construction site (uses `assetOptions` with `AVURLAssetPreferPreciseDurationAndTimingKey`). `Track.id` is the URL. The folder bookmark already lives in `AppModel`. `PlaybackClock` already publishes position. The resume path is a tiny variation: build the item, insert into queue, `seek(to:)`, but do NOT call `play()` so `timeControlStatus` stays `.paused` and the existing KVO sink reflects that.
+
+This card is a sibling to card 0013 (format badge + NowPlayingBar UX pass). Both touch `PlayerEngine.swift` so they cannot be in-progress simultaneously (§8). Manager has serialized: 0012 first, then 0013.
+
+## Design
+
+**Visual direction:** no visual change. The whole point of this card is that the feature is invisible at rest and reveals itself only as a populated-but-paused now-playing bar on launch. JamBox should feel like it remembered without saying so — the tone is "a considerate friend who picked the needle back up where you left it," not a dialog box asking permission.
+
+**Comparable apps studied:**
+- **Apple Music / iTunes:** silently restores the last queue, paused, at last position. No UI affordance. On by default. Users expect this.
+- **Audirvana:** restores full session including queue. Paused. No opt-in.
+- **Overcast / Apple Podcasts:** universally remember position per episode. This is baseline podcast behavior and informs user expectations for any audio app.
+- **Foobar2000:** `Keep playing` / `Remember playing item` options, off by default, buried in preferences. We are explicitly NOT copying this — Foobar's ancestors were CD players, ours are streaming services. Our users' mental model is "my phone remembered," not "my stereo forgot."
+- **VLC:** restores file position on reopen (video), asks once via a banner. We skip the banner — one-time prompts are noise for a music player the user will open thousands of times.
+- **Decision: on by default, no setting.** If a "don't resume" setting is ever requested it becomes a future card. Shipping an off-by-default toggle would contradict the card's thesis.
+
+**Layout / wireframe:** no chrome changes. The populated-but-paused state already exists today — it's the same state you see after pressing pause mid-track. The only difference is that on launch it is pre-populated from disk rather than from a user action.
+
+```
+┌──────────────────────────────────────────────────────────┐
+│ [Table of tracks — sort restored per 0011]               │
+│ (selection empty; nothing highlighted)                   │
+├──────────────────────────────────────────────────────────┤
+│ [art] Song Title          [⏮] [▶] [⏭]                   │  ← play glyph, NOT pause. Normal paused state.
+│       Artist                                             │
+│       Album                                              │
+│ 12:34 ━━━━━●─────────────────────────── 45:67            │  ← scrub bar seeded at saved position
+└──────────────────────────────────────────────────────────┘
+```
+
+**Copy:** none. No banner, no toast, no "Resumed from where you left off" string. Silence is the feature.
+
+**Color & typography:** unchanged. All existing Theme.swift tokens apply as-is.
+
+**Spacing & sizing:** unchanged.
+
+**Interaction notes:**
+- Play-button glyph on launch is `play.fill` (the normal paused glyph), NOT a special "resume" icon. Consistency with every other paused state in the app. A user who pauses mid-track and a user who quit yesterday should see the same button. No visual distinction between "paused after playing" and "paused because we just launched."
+- Space bar or click play: resume from `clock.position` (already seeded). No confirmation.
+- Double-click any other row in the table: abandons the resume — treated exactly as a first play. The scrub bar reseeds to 0 for the new track. The saved state gets overwritten on the next save tick / on quit.
+- Scrub bar is interactive before the user presses play. Dragging the slider while still paused seeks the already-queued item; this is the existing behavior of `player.seek(to:)` and we are not changing it.
+- Clicking the artwork thumbnail still opens the album-art overlay — restored artwork should load exactly as if the track had just been started.
+- Skip-forward / skip-backward pressed before the first play: honored. Skipping forward from the resume state plays the next track from 0 (again, abandoning the resume). Skipping backward (when position > 3s) seeks to 0 of the same track. This matches existing semantics and requires no new code paths.
+
+**Asset list:** none.
+
+**Do-not-do guardrails:**
+- Do NOT add any visible "resume" indicator, badge, dot, or hint text. The feature is invisible by design.
+- Do NOT auto-play on launch. The card's acceptance is explicit: launch state is PAUSED. Auto-play would be hostile to users who open the app by accident, share a machine, have headphones unplugged, or are in a meeting.
+- Do NOT add a preference / setting / menu item to toggle resume. Out of scope. If ever requested → future card.
+- Do NOT add a "Resumed from 12:34" banner or toast. Silence.
+- Do NOT introduce a new `AVURLAsset` construction site. §7.1 demands a single `assetOptions` path. Extract a private helper if tempted to duplicate.
+- Do NOT introduce a new per-track security-scoped bookmark. The folder bookmark already covers the track. §7.4.
+- Do NOT save state on every 4Hz clock tick — only on a throttled timer (~5s) and on quit. High-frequency UserDefaults writes are wasteful and can stall on quit.
+- Do NOT use `AVPlayerItem(url:)` anywhere. Ever. §7.1.
+- Do NOT block the main thread on resume. The quick filesystem scan + bookmark resolve is already async-ish; adding a `seek` should not change that posture. Build the item, insert into queue, seek — no `await` chains blocking launch UI.
+- Do NOT rely on the quick `init(url:)` Track having a valid `duration`. It's 0. Clamping logic must use the asset's async-loaded duration, not the Track's field. See User Risk "saved position > real duration" below.
+- Do NOT start the scrub bar at 0 and then jump to the saved position after the seek completes. Seed `clock.position` synchronously to the saved value at the same moment the item is inserted, so the UI never shows the wrong position even for a frame.
+
+## User Risks & Edge Cases
+
+### Happy path
+User was 45 minutes into a 70-minute mix. Closes laptop. Three days later opens JamBox. The table draws with filenames, then fills with metadata. The now-playing bar is populated: art, title, artist, album, and the scrub bar is 64% full reading `45:01`. No sound. User hits space → mix resumes from 45:01 with no audible pop. Thirty seconds later the track ends and gaplessly transitions into the next track because the lookahead was pre-filled behind the scenes. User never thinks about it. Feature invisible. [MUST HANDLE] — this is the core card.
+
+### Empty / first-run states
+- **Fresh install, never played anything:** no saved state, no folder bookmark. App opens in the existing "No folder selected" state. Unchanged. [MUST HANDLE — by inaction; don't write a save-state file until there's something to save]
+- **Folder bookmark restored but saved-state file doesn't exist** (user launched, chose folder, never pressed play, quit): no resume, no crash, no log spam. Table loads normally, now-playing bar reads "Nothing playing." [MUST HANDLE]
+- **Saved-state file exists but folder bookmark is gone** (user revoked in System Settings, or nuked UserDefaults, or launched on a new machine): silently clear saved state. Show "No folder selected." No modal. [MUST HANDLE — acceptance bullet 5 covers this, verify engineer's implementation actually tolerates a missing `watchedFolderURL` at resume time]
+- **Saved state existed but user has paused playback at position 0** (never actually played — scrubbed back, pressed pause): position 0 is legal. Resume seeds the track, pre-fills the queue, scrub bar reads 0:00. User presses play → plays from the start. Indistinguishable from clicking the track fresh. [MUST HANDLE — don't special-case position 0 as "nothing to resume"]
+
+### Malformed / hostile input
+- **Saved track URL file was deleted between sessions:** silent clear. `FileManager.default.fileExists(atPath:)` check before attempting to build the `AVURLAsset`. No modal. [MUST HANDLE — acceptance bullet 5]
+- **Saved track URL file was moved/renamed:** same as deleted — the URL no longer resolves. Silent clear. We intentionally do NOT try to find the file by name in the folder; that's a future feature ("track identity by content hash"). [MUST HANDLE — silent; WONT HAPPEN — smart reconciliation]
+- **Saved track URL points to a file that still exists but is now 0 bytes / truncated / corrupt:** AVURLAsset will either fail to load duration (returns `.zero` / NaN) or report a duration shorter than the saved position. Clamp-to-duration (bullet 6) handles the latter; for the former, treat "duration load failure" as "cannot resume" and silently clear. [MUST HANDLE — verify the engineer's code handles `duration.seconds.isNaN || !isFinite`]
+- **Saved track file was replaced with a DIFFERENT audio file at the same URL:** we cannot detect this without a content hash. The app will happily seek into the new file. If the new file is shorter, bullet 6 clamps. If it's longer, the seek lands somewhere unexpected. The user will hear "wrong song, wrong spot" and their natural reaction is to click another track — which immediately overwrites the saved state with something sensible. Acceptable degradation. [WONT HAPPEN in normal use; NICE TO HANDLE — no action, document in plan]
+- **Saved track URL exists but is outside the restored folder** (user switched folders between sessions and the old folder's bookmark is what got re-resolved): the URL may still be accessible under the folder bookmark, but the Track won't be in `player.tracks`. Resume must verify the saved URL matches a track in the current `player.tracks` list (by URL equality), and silently clear if not. [MUST HANDLE — acceptance bullet 5 calls this out, verify the equality check happens AFTER `player.loadTracks(quickTracks)`]
+- **Corrupt save-state JSON** (partial write on crash, schema drift, user edited it): decode failure → silently clear and open fresh. No modal. Wrap in `try?` and treat any failure as "no saved state." [MUST HANDLE]
+- **Saved-state schema from an old version of JamBox:** use a `version` field in the saved payload. If version mismatch → silently clear. This future-proofs the schema without a migration burden today. [MUST HANDLE — ADDED to acceptance bullets, see below]
+- **Saved position is negative, NaN, or infinite:** clamp to `[0, duration]`. `max(0, min(saved, duration))` with a finite check. [MUST HANDLE]
+- **Unicode / strange characters in the track URL:** `URL` encodes/decodes them fine; `Codable` round-trips them fine. No special handling. [WONT HAPPEN]
+
+### Scale stress
+- **Library with 50,000 tracks:** resume only needs to `firstIndex(where: { $0.url == savedURL })` — that's O(n) once at launch, which at 50k tracks is microseconds. Fine. [MUST HANDLE by virtue of existing design]
+- **Throttled 5s save timer with a huge queue:** the save payload is tiny (one URL string + one double + one version int ≈ 200 bytes). UserDefaults writes it to a plist. Writing this every 5 seconds while playback is active is cheap. Not a concern. [MUST HANDLE — use a `Timer` or `DispatchSourceTimer`; cancel it in `deinit` / when playback stops]
+- **Timer continues firing while paused:** it should NOT. If `isPlaying == false`, the 5s tick either skips the write or the timer is suspended. This prevents pointless writes when the user parks the app paused for hours. [MUST HANDLE — the save on quit still captures the final position regardless]
+- **User has sort applied from card 0011:** no interaction. The saved state is a URL, not an index, so sort order is irrelevant. Position restore is independent of track ordering. [MUST HANDLE by design]
+
+### Concurrency / interruption
+- **App crashes mid-save (power loss, OOM, force-quit):** UserDefaults writes are atomic per-key via CFPreferences, so the worst case is the write didn't land and we lose up to 5s of progress. Tolerable by design. [MUST HANDLE by acceptance bullet 2]
+- **Metadata enrichment is still running when the user quits:** the enrichment task is already cancellable in `loadFolder`. Quit triggers the save, which captures the current URL + position regardless of whether the enriched metadata has arrived. On next launch, the cheap `init(url:)` Track is created by `loadTracks`, and the resume flow doesn't depend on enriched fields. [MUST HANDLE — explicit in acceptance bullet 7]
+- **Quit happens during a track transition (`handleItemChange` firing):** the save payload is read from `player.currentTrack?.url` and `clock.position`. Both are MainActor-isolated and consistent within a single run-loop tick. The save on quit must happen on the main actor. The worst realistic case is saving the outgoing track at position ≈ duration, which on resume clamps to duration and then plays nothing until the user presses skip. Acceptable. An alternative (save the incoming track at position 0) is equally acceptable. Engineer's call — document in plan. [NICE TO HANDLE — either outcome is fine; call out in plan]
+- **User presses play in the ~50ms window between "track list loaded" and "resume seek complete":** the resume flow must be synchronous with track-list load. `AppModel.loadFolder` → `player.loadTracks(quickTracks)` → `player.resume(savedState)` (or equivalent) → done, before any user input can land. If the user somehow does press play faster than that, they get the first track from 0 instead of the resumed track. Acceptable worst case. [MUST HANDLE — resume must happen on the same tick as `loadTracks`]
+- **User drags a different folder before resume completes:** `chooseFolder()` already cancels `metadataTask`. The resume happens inside `loadFolder` on the restored folder, so a subsequent `loadFolder(newURL)` from the user's folder pick immediately supersedes it. The user's choice wins. The saved state on next quit will reflect the new folder's track. [MUST HANDLE — verify resume is scoped inside `loadFolder`, not in `init` where it would race with `chooseFolder`]
+- **User clicks a different track before pressing play on the resumed one:** their click calls `player.play(startingAt:)` which removes all queue items and rebuilds. The resume is abandoned cleanly. [MUST HANDLE — `play(startingAt:)` already calls `queuePlayer.removeAllItems()`]
+- **Skip-forward pressed during the resumed-but-not-yet-played state:** `advanceToNextItem()` on a queue of 3 paused items moves to item 2 without playing. The now-playing bar updates via the `currentItem` KVO. Net result: user sees the next track paused at 0, can press play. [MUST HANDLE — existing semantics]
+- **Lookahead not yet filled when the user presses play (race):** this is the §7.2 landmine. `play(startingAt:)` fills the lookahead synchronously before returning, and the resume code must do the same — insert all `lookAhead` items into the queue at restore time, not lazily. [MUST HANDLE — explicit in acceptance bullet 4]
+
+### "Wrong" user actions
+- **User has the search field focused at quit:** search query is ephemeral; we don't persist it. On next launch it opens blank. Resume is independent of search state. [MUST HANDLE by inaction]
+- **User was in the middle of a scrub drag at quit:** quit captures `clock.position` which during a drag still reflects the actual playback position (the drag's `scrubFraction` is local to `NowPlayingBar` and doesn't update `clock.position` until release). Worst case: the user dragged to minute 50, didn't release, quit — we save minute 20 (actual). On resume they're at 20, not 50. Mildly surprising but defensible. [NICE TO HANDLE — acceptable degradation]
+- **User has saved state from one folder, launches with a different folder bookmark** (manually edited bookmark, multi-machine sync, etc.): the URL equality check filters this out. Silent clear. [MUST HANDLE — bullet 5]
+- **User launches, closes the window without quitting, reopens window:** AppModel survives window close (documented at top of AppModel.swift). `loadFolder` is NOT called again on window reopen. Saved-state restore must happen in `loadFolder` (invoked once at launch via `loadSavedFolder`), not in any view's `.onAppear`. [MUST HANDLE — call out in plan]
+- **User quits with nothing playing (ever), or after clearing the queue via some future feature:** save nothing, or clear the key. Bullet 1 covers this. [MUST HANDLE]
+- **User has `currentTrack` set but position is 0:00** (just started, never advanced): still save it. Resume will seed at 0:00, which feels identical to clicking fresh. [MUST HANDLE]
+- **User has media keys remapped / external control surface:** media-key toggle play on the resumed-but-paused state must work. `MediaKeyController` calls `player.togglePlayPause()` which already honors `currentTrack != nil`. Verify the resume flow sets `currentTrack` before the user can press the media key. [MUST HANDLE]
+
+### Accessibility
+- **VoiceOver:** the populated-but-paused now-playing bar must be announced as such. Today a paused track announces "Song Title, Artist, Album, Play button." On launch, this is the exact same state, so VoiceOver's existing announcement applies. No extra work needed, but ENGINEER should verify the `play.fill` button's accessibility label is "Play" (not "Pause") when paused. This is existing behavior — not a regression risk — but worth a 10-second check. [NICE TO HANDLE — verify, don't rewrite]
+- **Keyboard-only user:** resume works via space bar (existing `.onKeyPress(.space)` in ContentView). The resumed-but-paused state has `currentTrack != nil` so `togglePlayPause` will play. [MUST HANDLE — verify by inspection, no new code]
+- **Reduced-motion:** no animations introduced by this card. N/A. [WONT HAPPEN]
+- **Locale differences:** saved position is a `Double` in seconds, not a formatted string. Locale-safe. URL is encoded. [WONT HAPPEN]
+- **Dynamic Type:** no new text. N/A. [WONT HAPPEN]
+
+### Failure recovery
+- **Save-state JSON corrupt:** `try?` decode, failure → clear the key, proceed with empty resume. [MUST HANDLE]
+- **Saved URL doesn't resolve:** silent clear. [MUST HANDLE — bullet 5]
+- **Duration load fails on the resumed asset:** treat as unresumable. Silent clear. Do NOT present a half-populated now-playing bar with a broken scrub bar. [MUST HANDLE]
+- **Seek fails (AVPlayer returns false via the completion handler):** the user sees the track populated at position 0 and can press play normally. Mildly degraded but functional. Do NOT hold the launch flow waiting for seek completion. [NICE TO HANDLE — fire-and-forget seek is fine]
+- **UserDefaults is read-only / denied** (sandboxed, rare): save silently no-ops. Feature degrades to "no resume," which is the pre-card-0012 state. [MUST HANDLE — don't crash on write failure]
+
+### Project-specific landmines
+- **§7.1 AVURLAsset:** the resume path must construct its `AVPlayerItem` through the existing `Self.assetOptions`. The plan should either reuse `play(startingAt:)` (by adding an optional `seekTo:` parameter and a `shouldAutoplay:` flag) or extract a private `makeAssetItem(for:) -> AVPlayerItem` helper so there's exactly one call site. No new construction sites. [MUST HANDLE — acceptance bullet 8]
+- **§7.2 Gapless:** the lookahead must be filled synchronously at resume, same as `play(startingAt:)` does today (`lookAhead = 3`). The first track→next transition after the user presses play must be gapless. The engineer MUST verify by ear. [MUST HANDLE — acceptance bullet 4 and 12]
+- **§7.3 Two-phase loading:** on resume, `player.tracks` briefly contains cheap `init(url:)` Tracks. The resumed `currentTrack` is one of them. Later, `updateMetadata` swaps in the enriched version. The existing `updateMetadata` already handles swapping the `currentTrack` reference in-place (lines 178–180). Verify the scrub bar doesn't reset during the swap (it shouldn't — `clock.duration` is read from the AVPlayerItem's asset, not from the Track's `duration` field, once the asset loads). [MUST HANDLE — acceptance bullet 7, verify by inspection]
+- **§7.4 Sandbox bookmarks:** the resume path must NOT call `startAccessingSecurityScopedResource` a second time on the folder URL. The folder is already accessed by `resolveBookmark` inside `loadSavedFolder`. And no new per-track bookmark. [MUST HANDLE — acceptance bullet 9]
+
+### Newly identified acceptance bullets
+
+Two [MUST HANDLE] items surfaced above are not cleanly covered by the existing acceptance list. Adding them now:
+
+1. **Schema version field:** the saved-state payload must include a `version: Int` field. On decode, if the version doesn't match the current schema, silently clear. This future-proofs schema evolution.
+2. **Save timer pauses while playback is paused:** the throttled ~5s save timer must only fire while `isPlaying == true`. The save-on-quit path is independent and still fires unconditionally.
+
+(See acceptance bullet changes in frontmatter.)
+
+## Plan
+*Filled in by the engineer during plan mode, BEFORE any code edits.*
+
+**Approach:**
+
+**Files:**
+
+**Risks:**
+
+**Open questions:**
+
+## Log
+- 2026-04-08 — manager card created in ready/, sibling to 0013, will dispatch designer next
+- 2026-04-08 — designer-12 claimed card, moved ready/ → design/
+- 2026-04-08 — designer-12 wrote ## Design (no-visual-change spec + guardrails) and ## User Risks & Edge Cases (walked every category from §4b step 5). Added two new acceptance bullets: (a) schema version field in saved-state payload, (b) throttled save timer pauses while playback is paused. Both surfaced as [MUST HANDLE] risks not covered by the original acceptance list.
+- 2026-04-08 — designer-12 self-audited: every acceptance bullet is answered either by the ## Design section (do-not-do guardrails, play-glyph decision, no-banner decision) or by a tagged risk in ## User Risks & Edge Cases (all file-missing, clamp, §7.1/2/3/4 landmines, schema, timer behavior). Handing back to ready/ for engineer dispatch.
+
+## Self-Audit
+*Filled in by the engineer before handing off to QA. See .pm/README.md §6.*
+
+1. Re-read modified files:
+2. Acceptance walkthrough:
+3. Build result:
+4. Invariants verified:
+5. Hostile diff review:
+6. Touched-files reconciliation:
+7. Scope check:
+
+## QA Report
+*Filled in by the QA agent. See .pm/README.md §6b.*
+
+### Acceptance
+
+### Invariants
+
+### Findings
+
+### Recommendation
+
+## Design Review
+*Filled in by the designer AFTER QA approves. See .pm/README.md §6c.*
+
+### Original risks revisited
+
+### Newly surfaced concerns
+
+### Recommendation
+
+## Manager Decision
+*Filled in by the manager when closing or kicking back.*
