@@ -6,7 +6,7 @@ needs_designer: true
 designer: designer-12
 design_review: null
 engineer: engineer-12
-qa: null
+qa: qa-12
 parent: null
 priority: P2
 estimate: S
@@ -244,6 +244,7 @@ Expected `touches:` stays as in frontmatter, possibly drop `ContentView.swift` i
 - 2026-04-08 — engineer-12 wrote ## Plan (extract makeAssetItem helper, new PlayerEngine.resume method, AppModel save/load/clear, willTerminate hook, isPlaying-gated 5s timer)
 - 2026-04-08 — engineer-12 implemented: PlayerEngine.makeAssetItem helper collapses both queue construction sites; new resume(trackIndex:position:onFailure:) and clearPlayback(); AppModel PlaybackState struct (schema v1), save/load/clear/tryRestorePlayback, willTerminate observer, isPlaying-gated 5s Timer; build green; touches reconciled (ContentView not modified)
 - 2026-04-08 — engineer-12 self-audited (all 7 steps), moving to qa/
+- 2026-04-08 — qa-12 claimed card, starting §6b independent audit
 
 ## Self-Audit
 
