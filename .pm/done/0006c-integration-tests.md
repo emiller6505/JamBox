@@ -363,3 +363,11 @@ are untouched in this kickback fix.
 ## QA Report
 
 ## Manager Decision
+
+2026-04-09 — APPROVE WITH CHILD CARD. Card was kicked back from qa/ once for flaky tests; engineer-06c fixed the wait patterns (debounced settled-state via `MaxBox` capture pattern, plus explicit teardown via PlayerEngine ivar + `clearPlayback()`) and verified with 3 consecutive clean full-suite runs. Manager independently re-verified with 3 more runs: 43/43 green every time, ~2.55s wall clock per run. The Vorbis-FLAC test from 0006b plus the new 0006c regression tests (FLAC duration §7.1, FLAC bit-depth card 0020, gapless lookahead §7.2, resume mechanism card 0012) are all in place and stable.
+
+**Engineer correction of manager diagnosis (worth acknowledging):** I told the engineer the production code's final settled `clock.duration` was correct and only the test's read timing was wrong. The engineer captured the actual value sequence in failing runs (`[0.0, 0.0, 0.0, 1.0, 0.0]`) and proved that for the in-range resume path the production code's final settled state IS genuinely `clock.duration = 0`, because `handleItemChange` re-zeros after the async load AND the re-seek branch short-circuits when `abs(clamped - sanitized) <= 0.01`. Real users don't observe this because pressing play kicks the periodic time observer which writes the real value, but it is a real quirk in the resume + still-paused state. The engineer correctly chose NOT to fix this in 0006c (production code change, scope creep). Filed as child card **0023**.
+
+**One internal accessor added to production code:** `PlayerEngine.queuedItemCount` (lines 125-130) — read-only `internal var` exposing `queuePlayer.items().count` for the §7.2 gapless lookahead test. Documented inline as test-only. Engineer flagged in Self-Audit step 7. Approved by manager — necessary for the highest-value gapless regression test.
+
+Closing to done/. 0006c retired the most important systemic gap from this session: real audio playback regression coverage including the 0020 bit-depth bug and the 0012 resume bug. Next: 0006d (XCUITest user flows including the 0021 spacebar regression).
