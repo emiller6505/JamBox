@@ -5,7 +5,7 @@ created: 2026-04-08
 needs_designer: true
 designer: designer-13
 design_review: null
-engineer: null
+engineer: engineer-13
 qa: null
 parent: null
 priority: P2
@@ -318,6 +318,7 @@ Acceptance list is **unchanged**. No edits to frontmatter.
 - 2026-04-08 — manager card created in ready/, sibling to 0012, will dispatch designer next
 - 2026-04-08 — designer-13 picked up, moved ready/ → design/
 - 2026-04-08 — designer-13 completed ## Design and ## User Risks & Edge Cases; self-audited all acceptance bullets; no changes to acceptance frontmatter; moved design/ → ready/ for engineer dispatch
+- 2026-04-08 — engineer-13 picked up, moved ready/ → in-progress/
 
 ## Self-Audit
 *Filled in by the engineer before handing off to QA. See .pm/README.md §6.*
