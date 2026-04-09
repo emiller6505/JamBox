@@ -317,6 +317,7 @@ Acceptance list is **unchanged**. No edits to frontmatter.
 ## Log
 - 2026-04-08 — manager card created in ready/, sibling to 0012, will dispatch designer next
 - 2026-04-08 — designer-13 picked up, moved ready/ → design/
+- 2026-04-08 — designer-13 completed ## Design and ## User Risks & Edge Cases; self-audited all acceptance bullets; no changes to acceptance frontmatter; moved design/ → ready/ for engineer dispatch
 
 ## Self-Audit
 *Filled in by the engineer before handing off to QA. See .pm/README.md §6.*
