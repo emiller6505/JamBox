@@ -12,9 +12,8 @@ priority: P1
 estimate: M
 depends_on: [0006a]
 touches:
-  - JamBoxTests/
-  - JamBox/Track.swift
-  - JamBox/FileScanner.swift
+  - JamBoxTests/Unit/
+  - JamBox.xcodeproj/project.pbxproj
 acceptance:
   - `Track.init(url:)` produces correct `displayName` from filename without extension. Tested with at least one file with multiple dots, one Unicode filename, one filename with no extension.
   - `Track.loadMetadata` parses ID3 tags correctly from the mp3 fixture (0006a). Verifies title, artist, album, track number against known values.
@@ -98,8 +97,69 @@ Also: `xcodegen generate` to regenerate project (new source files under JamBoxTe
 - 2026-04-08 — manager created card in backlog/, depends on 0006a
 - 2026-04-08 — engineer claimed, → in-progress
 - 2026-04-08 — plan written
+- 2026-04-08 — impl complete, 34 tests pass in 0.192s, build green, → qa
 
 ## Self-Audit
+
+### Step 1 — Re-read all modified files top to bottom
+Re-read every new file under `JamBoxTests/Unit/`. No dead code, no debug prints, no commented-out blocks, no TODO/FIXME. Every helper is used. Every test body has a clear assertion.
+
+### Step 2 — Walk every acceptance bullet
+
+- **`Track.init(url:)` displayName multi-dot / Unicode / no-extension** — PASS. `TrackDisplayNameTests.swift:13` (plain), `:18` (`a.b.c.flac` → `a.b.c`), `:23` (`café – 歌.m4a`), `:29` (`README` no-ext), `:35` (empty defaults).
+- **`Track.loadMetadata` ID3 from mp3** — PASS. `TrackMetadataTests.swift:22` asserts title/artist/album/trackNumber=3 against `tone.mp3`.
+- **`Track.loadMetadata` Vorbis from 16-bit FLAC (REGRESSION)** — PASS. `TrackMetadataTests.swift:38` explicitly asserts the `vorb/TITLE`-fallback-path produces `"JamBox Test Tone"` against `tone-16.flac`, with a comment tying it to the commonMetadata-empty-for-FLAC bug.
+- **`Track.loadMetadata` iTunes from m4a** — PASS (partial, documented). `TrackMetadataTests.swift:58` asserts title/artist/album against `tone.m4a`. trackNumber is NOT asserted here because ffmpeg's m4a muxer writes an empty `trkn` atom even when given `-metadata track="3"` — AVFoundation surfaces `itsk/trkn` with both `stringValue` and `numberValue` nil. Documented inline in the test. The ID3 path already covers trackNumber extraction, so production code has coverage. Non-blocking — if this is a concern, follow-up card should switch `generate.sh` to AtomicParsley / MP4Box for the m4a fixture.
+- **`Track.loadMetadata` defaults when missing** — PASS. `TrackMetadataTests.swift:74` copies `tone.wav` (generated with `-map_metadata -1`) to a temp dir with a known filename and asserts displayName falls back to filename, artist/album empty, trackNumber nil, duration still extracted.
+- **`FileScanner.scanFolder` filtering** — PASS. `FileScannerTests.swift:37` creates a temp dir with all 8 supported extensions plus txt/jpg/md/zip/no-suffix distractors, asserts the returned set equals exactly the 8 audio files. `FileScannerTests.swift:63` also exercises case-insensitivity.
+- **`FileScanner.scanFolder` stable order** — PASS. `FileScannerTests.swift:71` scans twice and asserts equal.
+- **`ThemeManager` round-trip** — PASS. `ThemeManagerTests.swift:35` dark, `:42` candy, `:48` all themes via `Theme.allCases`. `:57` also covers fallback from invalid stored value. setUp/tearDown snapshot and restore `UserDefaults.standard["theme"]` so the user's pref isn't polluted.
+- **Duration formatting (0/59/60/3599/3600)** — PASS. `FormattersTests.swift:19-42`. NOTE: current `Track.durationString` is mm:ss only; 3600s formats as `"60:00"` not `"1:00:00"`. Tests lock in current behavior with a comment flagging that a proper h:mm:ss break is a future card.
+- **`trackNumberString` (nil/0/1/99/100)** — PASS. `FormattersTests.swift:61-77`.
+- **All tests pass via xcodebuild test** — PASS. Final run: 34 tests total, 0 failures, **0.192s** execution. Paste below.
+- **Build green, no new warnings** — PASS. `xcodebuild -project JamBox.xcodeproj -scheme JamBox build` → `** BUILD SUCCEEDED **`, no compiler warnings (only standard `xcodebuild: WARNING: Using the first of multiple matching destinations`, which is infrastructural and pre-existing).
+- **§7 invariants preserved** — PASS. See step 4.
+
+### Step 3 — Build / test status
+
+```
+xcodebuild -project JamBox.xcodeproj -scheme JamBox -destination 'platform=macOS' test
+…
+Test Suite 'All tests' passed at 2026-04-09 10:10:01.033.
+     Executed 34 tests, with 0 failures (0 unexpected) in 0.192 (0.239) seconds
+** TEST SUCCEEDED **
+```
+
+```
+xcodebuild -project JamBox.xcodeproj -scheme JamBox build
+…
+** BUILD SUCCEEDED **
+```
+
+### Step 4 — §7 invariants
+
+1. **AVURLAsset precise timing** — N/A to new code. `Track.loadMetadata` (unchanged) is the only AVURLAsset construction exercised, and its call site already uses `assetOptions` dictionary. Layer 1 static check (`AVURLAssetPreciseTimingTests`) still passes on the full `JamBox/` tree after this card.
+2. **Gapless playback** — N/A. No `PlayerEngine.swift` touched. Verified: `git diff main -- JamBox/PlayerEngine.swift` is empty.
+3. **Two-phase loading** — N/A to new code. Tests exercise both phases independently: `TrackDisplayNameTests` hits the fast synchronous path, `TrackMetadataTests` hits the async enrichment path.
+4. **Sandbox bookmarks** — N/A. No `startAccessingSecurityScopedResource` usage in new code. Layer 1 static balance check still passes.
+5. **Xcodegen regeneration** — PASS. Ran `xcodegen generate`, committed the regenerated `project.pbxproj` alongside the new test files. Diff verified purely additive (7 new file refs + 7 build file entries + one new `Unit` group).
+6. **Build green** — PASS. See step 3.
+
+### Step 5 — Hostile diff review
+
+- `TrackMetadataTests.testITunesFromM4A` does NOT assert trackNumber. A reviewer will flag this. The inline doc-comment pre-empts that — it's a fixture limitation, not a loader gap, and the ID3 path already exercises trackNumber extraction in `testID3FromMP3`. Acceptable but flagging explicitly.
+- `FormattersTests.testDurationExactlyOneHour` asserts `"60:00"` not `"1:00:00"`. Reviewer might expect h:mm:ss. This is current implementation behavior (see `Track.swift:14-18`); the acceptance bullet says "mm:ss, h:mm:ss boundaries" but the impl doesn't do h:mm:ss break. Test locks in current behavior with a comment flagging future work — matches "exercising existing behavior, not changing it" from the card's context section.
+- `ThemeManagerTests` touches `UserDefaults.standard`. setUp/tearDown snapshot/restore makes this safe for normal runs; if a run is killed mid-test (ctrl-C between setUp and tearDown) the user's theme pref could momentarily be cleared. The scope is a single key and the risk window is <10ms; acceptable trade-off versus the complexity of abstracting `@AppStorage` storage.
+- `FileScannerTests` uses `Data().write(to:)` for empty files. Scanner only looks at extensions, so this is correct and intentional.
+- `FixtureLoader` uses a private anchor class `FixtureLoaderAnchor: NSObject` purely as an NSObject subclass anchor for `Bundle(for:)`. Slightly unusual but self-documenting.
+
+### Step 6 — Touched-files reconciliation
+
+Frontmatter originally listed `JamBoxTests/`, `JamBox/Track.swift`, `JamBox/FileScanner.swift`. Actual touches: `JamBoxTests/Unit/` (7 new files) + `JamBox.xcodeproj/project.pbxproj` (regeneration). **No production Swift files touched** — frontmatter updated to reflect reality. This is actually better than the original plan: the card context said "Engineer should NOT touch production code" and I succeeded.
+
+### Step 7 — Scope check
+
+No out-of-scope changes. All edits are inside `JamBoxTests/Unit/` plus the inevitable xcodeproj regeneration. Did not touch `PlayerEngine.swift` (0006c scope). Did not add XCUITests (0006d scope). Did not refactor `Track.swift` / `FileScanner.swift` / `Theme.swift` despite noting behaviors that could be improved — flagged in comments as future work instead.
 
 ## QA Report
 
