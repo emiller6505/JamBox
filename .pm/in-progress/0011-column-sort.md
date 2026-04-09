@@ -4,7 +4,7 @@ title: Sort track list by column header (iTunes-style)
 created: 2026-04-08
 needs_design: false
 designer: null
-engineer: null
+engineer: engineer-11
 qa: null
 parent: null
 priority: P2
@@ -63,6 +63,7 @@ This sits next to card 0008 (search filter), which is the most recent UX change 
 
 ## Log
 - 2026-04-08 — manager card created in ready/ after clarifying queue/persistence/default-sort with user
+- 2026-04-08 — engineer-11 claimed, moved to in-progress/
 
 ## Self-Audit
 *Filled in by the engineer before handing off to QA. See .pm/README.md §6.*
