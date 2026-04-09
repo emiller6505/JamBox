@@ -599,8 +599,20 @@ final class PlayerEngine: ObservableObject {
         let sampleRate = asbd.mSampleRate
         guard sampleRate.isFinite, sampleRate > 0 else { return nil }
 
-        // Bit depth — zero means AVFoundation couldn't determine it, hide.
-        let bits = Int(asbd.mBitsPerChannel)
+        // Bit depth — for compressed lossless formats (FLAC, ALAC) the
+        // primary ASBD reports `mBitsPerChannel == 0` because that field
+        // describes AVFoundation's *decode-target* format, not the source
+        // PCM bit depth. The source bit depth lives in the file's metadata
+        // (FLAC's STREAMINFO block, ALAC's magic cookie), which AudioToolbox's
+        // `ExtAudioFile` knows how to read for every Apple-supported format.
+        // For uncompressed PCM (WAV/AIFF), the primary ASBD is correct.
+        // For lossy formats (MP3/AAC) bit depth is meaningless; we still
+        // hide the badge in that case (card 0019 will revisit).
+        var bits = Int(asbd.mBitsPerChannel)
+        if bits == 0, name == "FLAC",
+           let urlAsset = asset as? AVURLAsset {
+            bits = Self.readSourceBitDepth(from: urlAsset.url) ?? 0
+        }
         guard bits > 0 else { return nil }
 
         // Float flag is only meaningful for LPCM. For compressed codecs
@@ -614,6 +626,58 @@ final class PlayerEngine: ObservableObject {
             bitDepth: bits,
             isFloat: isFloat
         )
+    }
+
+    /// Read source PCM bit depth from a FLAC file by parsing the mandatory
+    /// `STREAMINFO` metadata block directly. Used as a fallback for FLAC
+    /// because AVFoundation's primary `AudioStreamBasicDescription` reports
+    /// `mBitsPerChannel == 0` (it describes the decode-target, not the
+    /// source PCM) and AudioToolbox's `ExtAudioFile` does not reliably
+    /// open FLAC files under the app sandbox.
+    ///
+    /// FLAC layout: 4-byte "fLaC" magic, then a 4-byte
+    /// METADATA_BLOCK_HEADER (1 byte type, 3 bytes length, big-endian),
+    /// then the STREAMINFO block. STREAMINFO is the FIRST metadata block
+    /// per the spec and is always type 0, length 34. Within STREAMINFO,
+    /// bit depth - 1 is encoded in 5 bits at bit offset 36 of the
+    /// (sample-rate, channels, bits) section, which spans bytes 12-13 of
+    /// STREAMINFO (file bytes 20-21). The 5 bits straddle the byte
+    /// boundary: low bit of byte 20 + high 4 bits of byte 21.
+    ///
+    /// Returns nil on any read or parse failure (file too short, wrong
+    /// magic, sandbox denial). Caller hides the badge in that case.
+    /// Hotfix card 0020.
+    private static func readSourceBitDepth(from url: URL) -> Int? {
+        // Read just the first 22 bytes — enough to cover the FLAC magic,
+        // metadata block header, and the STREAMINFO bytes containing the
+        // bit-depth field. Avoids loading the whole audio file.
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+
+        let header: Data
+        do {
+            header = try handle.read(upToCount: 22) ?? Data()
+        } catch {
+            return nil
+        }
+        guard header.count >= 22 else { return nil }
+
+        // "fLaC" magic.
+        guard header[0] == 0x66, header[1] == 0x4C,
+              header[2] == 0x61, header[3] == 0x43 else { return nil }
+
+        // METADATA_BLOCK_HEADER at bytes 4-7. Block type is the low 7
+        // bits of byte 4; STREAMINFO must be type 0 and must be first.
+        guard (header[4] & 0x7F) == 0 else { return nil }
+
+        // STREAMINFO starts at byte 8. Bit-depth field is at file
+        // bytes 20-21 (STREAMINFO offset 12-13).
+        let b20 = header[20]
+        let b21 = header[21]
+        // Low bit of b20 + high 4 bits of b21 → 5-bit (bit_depth - 1).
+        let bitsMinusOne = ((Int(b20) & 0x01) << 4) | (Int(b21) >> 4)
+        let bits = bitsMinusOne + 1
+        return (bits >= 4 && bits <= 32) ? bits : nil
     }
 
     // MARK: - Artwork

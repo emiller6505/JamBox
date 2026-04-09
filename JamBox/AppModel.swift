@@ -58,6 +58,18 @@ final class AppModel: ObservableObject {
     private var saveTimer: Timer?
     private let saveTimerInterval: TimeInterval = 5
 
+    /// App-wide spacebar play/pause monitor (card 0021). The SwiftUI
+    /// `.onKeyPress(.space)` modifier on ContentView only fires when
+    /// something in its subtree has keyboard focus. After card 0012 the
+    /// app can launch into a "track loaded, paused" state with NOTHING
+    /// focused (WindowAccessor clears the initial first responder so the
+    /// search field doesn't grab it), so spacebar would do nothing until
+    /// the user clicked the table. This NSEvent monitor handles spacebar
+    /// at the app level, focus-independent. We still defer to the search
+    /// field when it's the first responder so users can type literal
+    /// spaces.
+    private var spaceKeyMonitor: Any?
+
     init() {
         self.mediaKeys = MediaKeyController(player: player)
         folderWatcher.onChange = { [weak self] in
@@ -94,7 +106,40 @@ final class AppModel: ObservableObject {
             }
         }
 
+        installSpaceKeyMonitor()
+
         loadSavedFolder()
+    }
+
+    /// Install an app-local key-down monitor that toggles play/pause on
+    /// spacebar regardless of which view (if any) currently has SwiftUI
+    /// keyboard focus. This fixes the post-resume launch state where no
+    /// SwiftUI view has focus and `.onKeyPress(.space)` therefore never
+    /// fires. We pass the event through (return it unchanged) when the
+    /// first responder is a text field so the user can still type
+    /// literal spaces in the search field.
+    private func installSpaceKeyMonitor() {
+        spaceKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            // Spacebar keyCode is 49 on every Mac keyboard layout.
+            guard event.keyCode == 49 else { return event }
+            // Don't hijack any modified spacebar combo (Cmd+Space, etc.).
+            let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            guard modifiers.isEmpty else { return event }
+            // If a text field is the first responder, let the event through
+            // so it inserts a literal space.
+            if let window = NSApp.keyWindow,
+               let responder = window.firstResponder,
+               responder.isKind(of: NSText.self) || responder is NSTextView {
+                return event
+            }
+            // Hop to MainActor to call the actor-isolated player API. The
+            // event is returned nil to consume it.
+            MainActor.assumeIsolated {
+                self.player.togglePlayPause()
+            }
+            return nil
+        }
     }
     // No deinit: AppModel is owned by JamBoxApp as a top-level @StateObject,
     // so it lives for the entire app process. Cleanup happens in chooseFolder()
