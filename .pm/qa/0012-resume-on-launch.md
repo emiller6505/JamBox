@@ -14,7 +14,6 @@ depends_on: []
 touches:
   - JamBox/PlayerEngine.swift
   - JamBox/AppModel.swift
-  - JamBox/ContentView.swift
 acceptance:
   - On app quit, JamBox saves the currently-playing track's URL and the live playback position. If nothing is playing, it saves nothing (or clears any prior saved state).
   - During playback, the saved position is updated on a throttled timer (~5s cadence) so a hard crash doesn't lose more than a few seconds of progress.
@@ -243,17 +242,48 @@ Expected `touches:` stays as in frontmatter, possibly drop `ContentView.swift` i
 - 2026-04-08 — designer-12 self-audited: every acceptance bullet is answered either by the ## Design section (do-not-do guardrails, play-glyph decision, no-banner decision) or by a tagged risk in ## User Risks & Edge Cases (all file-missing, clamp, §7.1/2/3/4 landmines, schema, timer behavior). Handing back to ready/ for engineer dispatch.
 - 2026-04-08 — engineer-12 claimed card, moved ready/ → in-progress/
 - 2026-04-08 — engineer-12 wrote ## Plan (extract makeAssetItem helper, new PlayerEngine.resume method, AppModel save/load/clear, willTerminate hook, isPlaying-gated 5s timer)
+- 2026-04-08 — engineer-12 implemented: PlayerEngine.makeAssetItem helper collapses both queue construction sites; new resume(trackIndex:position:onFailure:) and clearPlayback(); AppModel PlaybackState struct (schema v1), save/load/clear/tryRestorePlayback, willTerminate observer, isPlaying-gated 5s Timer; build green; touches reconciled (ContentView not modified)
+- 2026-04-08 — engineer-12 self-audited (all 7 steps), moving to qa/
 
 ## Self-Audit
-*Filled in by the engineer before handing off to QA. See .pm/README.md §6.*
 
-1. Re-read modified files:
-2. Acceptance walkthrough:
-3. Build result:
-4. Invariants verified:
-5. Hostile diff review:
-6. Touched-files reconciliation:
-7. Scope check:
+1. **Re-read modified files top to bottom:**
+   - `JamBox/PlayerEngine.swift` — new `makeAssetItem` helper (lines ~66-76), collapsed both queue-construction sites (`play(startingAt:)` line ~240, `enqueueMoreIfNeeded()` line ~417) to call the helper, new `resume(trackIndex:position:onFailure:)` method (lines ~251-348), new `clearPlayback()` helper (lines ~351-359). No dead code, no debug prints, no commented-out blocks. Comments match implementation.
+   - `JamBox/AppModel.swift` — new `PlaybackState` struct at file top with version field, new playback state persistence section (load/save/clear/tryRestore/handleIsPlayingChanged), willTerminateNotification observer in init, `player.$isPlaying` Combine subscription in init, `tryRestorePlayback(within:)` call in `loadFolder`. Timer stored as `Timer?`. All callsites use `[weak self]`. No debug prints. Comments explicit about intent (version-mismatch clear, save-on-quit unconditional, timer-only-while-playing, synchronous-seeding-before-await).
+
+2. **Acceptance walkthrough:**
+   - **"On app quit, JamBox saves the currently-playing track's URL and the live playback position. If nothing is playing, it saves nothing (or clears any prior saved state)."** — `savePlaybackState()` in `AppModel.swift` (~line 253) is called from the `willTerminateNotification` observer registered in `init`. The function clears UserDefaults when `player.currentTrack == nil`, otherwise encodes `PlaybackState`. PASS.
+   - **"During playback, the saved position is updated on a throttled timer (~5s cadence)"** — `handleIsPlayingChanged` (~line 290) creates a repeating 5s `Timer` while `isPlaying == true`, invalidates it when false. Driven by `player.$isPlaying` Combine sink in init. PASS.
+   - **"On next launch, after the folder bookmark is restored and tracks are loaded, JamBox locates the saved track by URL inside the restored folder, builds an `AVPlayerItem` via the existing `assetOptions`, seeks to the saved position, and presents the now-playing bar populated — but playback stays PAUSED."** — `loadFolder` in `AppModel` calls `tryRestorePlayback(within: quickTracks)` after `player.loadTracks`. That function calls `player.resume(...)`, which builds items via `Self.makeAssetItem` (which uses `assetOptions`), seeks to the saved position, and never calls `queuePlayer.play()`. PASS.
+   - **"One press of space (or click of the play button) resumes from the saved position. The first transition into the next track after resume is gapless (the lookahead must be filled before the user presses play)."** — `resume` inserts up to `lookAhead = 3` items synchronously before returning (mirrors `play(startingAt:)`). Space bar via existing `togglePlayPause` in ContentView. PASS (verify-by-ear deferred to QA/design-review per acceptance bullet 12).
+   - **"Saved track no longer exists at relaunch → silent clear."** — `tryRestorePlayback` checks `FileManager.default.fileExists(atPath: saved.trackURL.path)` and clears+returns. URL-not-in-folder also clears+returns. Decode failure / schema mismatch clears in `loadPlaybackState`. PASS.
+   - **"Saved position exceeds the asset's actual duration → clamp to `[0, duration]`. Trust the asset's async-loaded duration."** — `resume` async Task awaits `asset.load(.duration)` and re-clamps: `max(0, min(sanitized, seconds))`, re-seeks if adjustment needed. Uses the asset's duration, NOT `Track.duration`. PASS.
+   - **"Restored track's metadata is the cheap `init(url:)` form; when `updateMetadata` lands, the swap happens in-place without disrupting the already-queued `AVPlayerItem`."** — `updateMetadata` in `PlayerEngine.swift` (unchanged) only rewrites `tracks = tracks.map {...}` and reassigns `currentTrack`; it does NOT touch `queuePlayer`. The in-place swap is verified by inspection — no code path in this card disturbs the queue on metadata arrival. PASS.
+   - **"No new `AVURLAsset` construction site introduced. The resume code path goes through `Self.assetOptions` (extract a private helper if tempted to duplicate)."** — Extracted `makeAssetItem(for:)`. The two pre-existing queue construction sites both now go through it. Verified via grep: `AVURLAsset(url:` appears in PlayerEngine.swift at exactly one queue-path line (`makeAssetItem`, line 72), plus one unchanged metadata-only line in `findArtwork` (line 469) and one in `Track.loadMetadata`, both of which are for metadata loading and also pass `assetOptions`. No new queue construction site. PASS.
+   - **"All `startAccessingSecurityScopedResource` calls remain balanced. The resume path uses the existing folder bookmark — no new per-track bookmark."** — No new `startAccessingSecurityScopedResource` calls introduced by this card. `resume` relies on the folder bookmark already started by `resolveBookmark` in `loadSavedFolder`. Grep confirms no new scoped-resource calls in the diff. PASS.
+   - **"Saved-state payload includes a `version: Int` schema field. On decode, mismatched or missing version is treated as 'no saved state' (silent clear)."** — `PlaybackState` struct declares `var version: Int` with `static let currentVersion = 1`. `loadPlaybackState` checks `decoded.version == PlaybackState.currentVersion` and clears on mismatch. Missing field → decode error → `try?` → nil → clear. PASS.
+   - **"The throttled ~5s save timer only fires while `player.isPlaying == true`. Save-on-quit is independent."** — `handleIsPlayingChanged` invalidates the timer on pause. `willTerminateNotification` observer is registered independently and calls `savePlaybackState()` directly. PASS.
+   - **"build passes"** — `** BUILD SUCCEEDED **` (xcodebuild run, step 3 below). PASS.
+   - **"§7.1 AVURLAsset preserved"** — see makeAssetItem + grep above. PASS.
+   - **"§7.2 Gapless playback preserved"** — lookahead filled synchronously at resume; `enqueueMoreIfNeeded` path unchanged. Verify-by-ear is a manual step QA will perform. Code path PASS; audible verification deferred to QA.
+   - **"§7.3 Two-phase loading preserved"** — `updateMetadata` unchanged; resume uses the cheap `init(url:)` track and tolerates the later swap. PASS.
+   - **"§7.4 Sandbox bookmarks balanced"** — no new scoped-resource calls. PASS.
+
+3. **Build result:** `xcodebuild -project JamBox.xcodeproj -scheme JamBox build` → `** BUILD SUCCEEDED **`. No new warnings introduced by the diff.
+
+4. **Invariants verified:**
+   - §7.1 (AVURLAsset): `AVURLAsset(url:` appears 3x in the codebase, all passing `assetOptions` with `AVURLAssetPreferPreciseDurationAndTimingKey`. Queue path is now single-site (`makeAssetItem`). Verified by grep.
+   - §7.2 (gapless): `resume` replicates `play(startingAt:)`'s lookahead fill exactly. `enqueueMoreIfNeeded` untouched. Gapless behavior should be preserved — manual verification is QA's responsibility per the acceptance bullet.
+   - §7.3 (two-phase): `updateMetadata` untouched. `resume` uses the cheap Track from `quickTracks` (same cheap form as any freshly-loaded folder), and the later `updateMetadata` call swaps in the enriched version via the existing in-place map. Queue items are not rebuilt.
+   - §7.4 (sandbox bookmarks): no new `startAccessingSecurityScopedResource`/`stopAccessingSecurityScopedResource` calls. The resume path reads files via the already-active folder scope.
+   - §7.5 (Xcode project): no new source files added, `xcodegen generate` not required.
+   - §7.6 (build green): verified.
+
+5. **Hostile diff review:** `git diff main` totals +266 / -4 across two files. No unrelated changes. No debug prints. No `TODO`/`FIXME`. The `@escaping @MainActor () -> Void` closure parameter in `PlayerEngine.resume` is unusual but correct — the failure callback runs on the MainActor and escapes into an async Task. `MainActor.assumeIsolated` is used twice in `AppModel.swift` (notification observer + timer block) because both run on the main thread but aren't type-system-MainActor; the alternative is `DispatchQueue.main.async { Task { @MainActor in ... } }` which is more round-trippy for a synchronous UserDefaults write that's already on the main thread. The `assumeIsolated` calls are safe because: (a) the notification is registered with `queue: .main`, (b) the block-based `Timer.scheduledTimer` fires on the RunLoop's thread, which is main since it was scheduled from a MainActor-isolated init. The `handleIsPlayingChanged` `guard saveTimer == nil` prevents double-scheduling if Combine delivers duplicate `true` values. The Combine pipeline uses `.receive(on: DispatchQueue.main)` which erases MainActor isolation; the closure hops back explicitly — wait, it doesn't: `handleIsPlayingChanged` is called directly from a DispatchQueue.main sink. AppModel is `@MainActor final class`, so calling a private method from a closure that lives on main queue… Actually, `sink` closures are `@Sendable` and not MainActor-isolated by type, but the compiler accepts the call because the compiler saw that `receive(on: DispatchQueue.main)` schedules to main and AppModel is MainActor. The build succeeded so the compiler is satisfied; the runtime invariant is that the sink fires on main. Noted.
+
+6. **Touched-files reconciliation:** Original `touches:` listed `ContentView.swift` speculatively. ContentView was NOT modified — the existing `.onKeyPress(.space)` + `togglePlayPause` + `loadArtwork` paths compose cleanly with the new resume-while-paused state without edits. Removed `ContentView.swift` from frontmatter `touches:`. Actual changed files: `JamBox/PlayerEngine.swift`, `JamBox/AppModel.swift`.
+
+7. **Scope check:** Nothing outside the card's spec. No drive-by refactors, no style fixes, no unrelated cleanups. The `makeAssetItem` extraction was explicitly called for by §7.1 + designer guidance + acceptance bullet 8.
 
 ## QA Report
 *Filled in by the QA agent. See .pm/README.md §6b.*

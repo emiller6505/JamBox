@@ -63,6 +63,16 @@ final class PlayerEngine: ObservableObject {
         AVURLAssetPreferPreciseDurationAndTimingKey: true
     ]
 
+    /// The ONE place `AVURLAsset` + `AVPlayerItem` get constructed for the
+    /// playback queue. Every code path that enqueues audio (initial play,
+    /// lookahead top-up, resume-on-launch) goes through this helper so the
+    /// `assetOptions` — specifically `AVURLAssetPreferPreciseDurationAndTimingKey`
+    /// — can never be forgotten. See README §7.1.
+    private static func makeAssetItem(for url: URL) -> AVPlayerItem {
+        let asset = AVURLAsset(url: url, options: assetOptions)
+        return AVPlayerItem(asset: asset)
+    }
+
     init() {
         queuePlayer.publisher(for: \.timeControlStatus)
             .receive(on: DispatchQueue.main)
@@ -228,8 +238,7 @@ final class PlayerEngine: ObservableObject {
 
         let end = min(index + lookAhead, tracks.count)
         for track in tracks[index..<end] {
-            let asset = AVURLAsset(url: track.url, options: Self.assetOptions)
-            queuePlayer.insert(AVPlayerItem(asset: asset), after: nil)
+            queuePlayer.insert(Self.makeAssetItem(for: track.url), after: nil)
         }
 
         currentTrack = tracks[index]
@@ -237,6 +246,105 @@ final class PlayerEngine: ObservableObject {
         clock.duration = tracks[index].duration
         loadArtwork(for: tracks[index])
         queuePlayer.play()
+    }
+
+    /// Seed the player at `trackIndex` paused at `position` (card 0012).
+    ///
+    /// Mirrors `play(startingAt:)` structurally — same single asset-construction
+    /// path via `makeAssetItem`, same synchronous lookahead fill — but:
+    /// (a) does NOT call `queuePlayer.play()` (state stays `.paused`),
+    /// (b) `clock.position` is seeded to `position` before the seek so the
+    ///     scrub bar never flashes 0 (no "start at 0 then jump" frame),
+    /// (c) after queue + UI are seeded synchronously, an async Task loads
+    ///     the first asset's real duration, clamps the saved position, and
+    ///     re-seeks if the saved value exceeded the real duration. If the
+    ///     asset fails to load its duration at all the track is unresumable:
+    ///     `onFailure` is invoked on the MainActor so the caller can clear
+    ///     its persisted state.
+    ///
+    /// §7.2: all `lookAhead` items are inserted synchronously before this
+    /// function returns, so the first track→next transition after the user
+    /// presses play is gapless.
+    func resume(trackIndex index: Int, position: TimeInterval, onFailure: @escaping @MainActor () -> Void) {
+        guard index >= 0, index < tracks.count else {
+            onFailure()
+            return
+        }
+        queuePlayer.removeAllItems()
+        currentIndex = index
+
+        let end = min(index + lookAhead, tracks.count)
+        for track in tracks[index..<end] {
+            queuePlayer.insert(Self.makeAssetItem(for: track.url), after: nil)
+        }
+
+        // Sanitize the saved position. Real clamp to duration happens after
+        // the asset loads its duration below; for now just ensure we seed a
+        // finite non-negative value so the scrub bar is stable.
+        let sanitized = (position.isFinite && position >= 0) ? position : 0
+
+        currentTrack = tracks[index]
+        clock.position = sanitized
+        // Track.duration is 0 for cheap init(url:) tracks — seed from it
+        // anyway; the async duration-load below will overwrite it with the
+        // real value once AVFoundation has parsed the container.
+        clock.duration = tracks[index].duration
+        loadArtwork(for: tracks[index])
+
+        // Seek to the seeded position immediately so currentTime() reflects
+        // it even though we're paused. Fire-and-forget; if it fails the user
+        // just lands at 0 for that track, which is tolerable.
+        let cmTime = CMTime(seconds: sanitized, preferredTimescale: 600)
+        queuePlayer.seek(to: cmTime)
+
+        // Asynchronously load the real duration, clamp if the saved position
+        // overshoots, and tear down on load failure (acceptance bullet 6 +
+        // "duration load fails → silent clear").
+        guard let firstItem = queuePlayer.items().first else {
+            // Shouldn't happen — we just inserted at least one — but be safe.
+            onFailure()
+            clearPlayback()
+            return
+        }
+        let asset = firstItem.asset
+        let savedURL = tracks[index].url
+        Task { [weak self] in
+            let loaded = try? await asset.load(.duration)
+            let seconds = loaded?.seconds ?? .nan
+            await MainActor.run {
+                guard let self else { return }
+                // If the user already moved on (different track queued, or
+                // playback cleared), abandon.
+                guard self.currentTrack?.url == savedURL else { return }
+
+                if !seconds.isFinite || seconds <= 0 {
+                    // Unresumable — silent teardown.
+                    self.clearPlayback()
+                    onFailure()
+                    return
+                }
+
+                self.clock.duration = seconds
+                let clamped = max(0, min(sanitized, seconds))
+                if abs(clamped - sanitized) > 0.01 {
+                    self.clock.position = clamped
+                    let newTime = CMTime(seconds: clamped, preferredTimescale: 600)
+                    self.queuePlayer.seek(to: newTime)
+                }
+            }
+        }
+    }
+
+    /// Tear down current playback without touching the `tracks` list.
+    /// Used by resume failure paths (card 0012) to return the engine to a
+    /// "nothing playing" state while keeping the loaded folder intact.
+    func clearPlayback() {
+        queuePlayer.removeAllItems()
+        currentTrack = nil
+        currentIndex = nil
+        currentArtwork = nil
+        clock.position = 0
+        clock.duration = 0
     }
 
     func togglePlayPause() {
@@ -303,8 +411,7 @@ final class PlayerEngine: ObservableObject {
         let desired = index + lookAhead
 
         for i in (lastEnqueued + 1)..<min(desired, tracks.count) {
-            let asset = AVURLAsset(url: tracks[i].url, options: Self.assetOptions)
-            queuePlayer.insert(AVPlayerItem(asset: asset), after: nil)
+            queuePlayer.insert(Self.makeAssetItem(for: tracks[i].url), after: nil)
         }
     }
 
