@@ -22,12 +22,95 @@ final class PlaybackClock: ObservableObject {
     @Published var duration: TimeInterval = 0
 }
 
+/// Immutable value describing the audio format of the currently-playing
+/// track — codec name, sample rate, bit depth, and whether the PCM is
+/// floating point. Built from the current `AVPlayerItem.asset`'s first
+/// audio track's `CMAudioFormatDescription` → `AudioStreamBasicDescription`,
+/// never from the file extension (the .m4a container can hold either ALAC
+/// or AAC, so we need the codec-level truth).
+///
+/// Lives on `PlayerEngine` as `@Published var currentFormat: AudioFormat?`,
+/// NOT on `PlaybackClock`, so the 4Hz clock observer does not cause
+/// re-renders or refetches. See `PlaybackClock` doc above.
+///
+/// Card 0013 — format badge in NowPlayingBar.
+struct AudioFormat: Equatable {
+    /// Whitelisted codec short name: "FLAC", "ALAC", "MP3", "AAC", "WAV", "AIFF".
+    let name: String
+    /// Sample rate in Hz (e.g. 96000).
+    let sampleRateHz: Double
+    /// Bits per sample (e.g. 24).
+    let bitDepth: Int
+    /// True iff the stream is LPCM float (e.g. 32-bit float WAV).
+    let isFloat: Bool
+
+    /// Compact visual badge string.
+    /// Middle-dot separator (U+00B7), period decimals regardless of locale,
+    /// lowercase-k kHz, `24 bit` not `24 bits`, special-case `32 bit float`.
+    /// Example: `"FLAC · 96 kHz · 24 bit"`.
+    var visual: String {
+        "\(name) · \(sampleRateNumber) kHz · \(bitDepthString)"
+    }
+
+    /// Long-form VoiceOver label, distinct from the compact visual.
+    /// Example: `"Audio format: FLAC, 96 kilohertz, 24 bit"`.
+    /// Float case: `"Audio format: WAV, 96 kilohertz, 32 bit floating point"`.
+    var voiceOver: String {
+        let depth = isFloat ? "\(bitDepth) bit floating point" : "\(bitDepth) bit"
+        return "Audio format: \(name), \(sampleRateNumber) kilohertz, \(depth)"
+    }
+
+    /// Sample rate number (no unit) per designer spec:
+    /// - Divide by 1000.
+    /// - If the result has a non-zero fractional part, show one decimal
+    ///   (e.g. 44100 → "44.1", 176400 → "176.4").
+    /// - Else show an integer (e.g. 48000 → "48", 96000 → "96").
+    /// - Always period decimal, never locale-dependent comma. This is a
+    ///   technical receipt, not localized prose.
+    private var sampleRateNumber: String {
+        let kHz = sampleRateHz / 1000.0
+        // Round to one decimal place for comparison.
+        let rounded1 = (kHz * 10).rounded() / 10
+        let isInteger = abs(rounded1 - rounded1.rounded()) < 1e-6
+        let locale = Locale(identifier: "en_US_POSIX")
+        if isInteger {
+            return String(format: "%.0f", locale: locale, rounded1)
+        } else {
+            return String(format: "%.1f", locale: locale, rounded1)
+        }
+    }
+
+    /// Bit depth formatted per designer spec: `"24 bit"`, or `"32 bit float"`
+    /// for LPCM floating-point streams. Never pluralized to "bits".
+    private var bitDepthString: String {
+        if isFloat {
+            return "\(bitDepth) bit float"
+        }
+        return "\(bitDepth) bit"
+    }
+}
+
 @MainActor
 final class PlayerEngine: ObservableObject {
     @Published var isPlaying = false
     @Published var currentTrack: Track?
     @Published var currentArtwork: NSImage?
     @Published var tracks: [Track] = []
+
+    /// Audio format of the currently-playing track (codec + sample rate +
+    /// bit depth). `nil` when nothing is playing OR when any field cannot
+    /// be determined — the badge in `NowPlayingBar` is hidden in both cases.
+    ///
+    /// Populated asynchronously from `handleItemChange(_:)` by reading the
+    /// existing `AVPlayerItem.asset`'s first audio track's format description.
+    /// We do NOT construct a new `AVURLAsset` here (§7.1) — we reuse the one
+    /// already in the playback queue. Fetches are identity-checked on
+    /// completion so rapid next-track spam can't show stale format info.
+    ///
+    /// Lives on `PlayerEngine`, not `PlaybackClock`, so the 4Hz clock tick
+    /// never invalidates format. See `PlaybackClock` doc above.
+    /// Card 0013.
+    @Published var currentFormat: AudioFormat?
 
     /// High-frequency playback time. See `PlaybackClock` doc above.
     /// Exposed as `let` (non-`@Published`) so that subscribers to
@@ -124,6 +207,7 @@ final class PlayerEngine: ObservableObject {
         currentTrack = nil
         currentIndex = nil
         currentArtwork = nil
+        currentFormat = nil
         artworkCache.removeAll()
         artworkCacheOrder.removeAll()
         clock.position = 0
@@ -207,6 +291,7 @@ final class PlayerEngine: ObservableObject {
             currentTrack = nil
             currentIndex = nil
             currentArtwork = nil
+            currentFormat = nil
             clock.position = 0
             clock.duration = 0
         }
@@ -343,6 +428,7 @@ final class PlayerEngine: ObservableObject {
         currentTrack = nil
         currentIndex = nil
         currentArtwork = nil
+        currentFormat = nil
         clock.position = 0
         clock.duration = 0
     }
@@ -388,6 +474,7 @@ final class PlayerEngine: ObservableObject {
             currentTrack = nil
             currentIndex = nil
             currentArtwork = nil
+            currentFormat = nil
             clock.duration = 0
             return
         }
@@ -398,7 +485,12 @@ final class PlayerEngine: ObservableObject {
             currentIndex = matched
             currentTrack = tracks[matched]
             clock.duration = tracks[matched].duration
+            // Clear stale format immediately so a fast visual glance never
+            // shows the previous track's spec. `loadFormat` re-populates it
+            // asynchronously, with an identity check on completion.
+            currentFormat = nil
             loadArtwork(for: tracks[matched])
+            loadFormat(for: tracks[matched], from: item.asset)
             enqueueMoreIfNeeded()
         }
     }
@@ -413,6 +505,115 @@ final class PlayerEngine: ObservableObject {
         for i in (lastEnqueued + 1)..<min(desired, tracks.count) {
             queuePlayer.insert(Self.makeAssetItem(for: tracks[i].url), after: nil)
         }
+    }
+
+    // MARK: - Audio format (card 0013)
+
+    /// Asynchronously read the current item's audio format (codec + sample
+    /// rate + bit depth) from the existing `AVAsset` already in the playback
+    /// queue. We do NOT construct a new `AVURLAsset` (§7.1). If any field is
+    /// missing/zero or the codec is outside the whitelist, `currentFormat`
+    /// stays nil and the badge is hidden — silent failure is the right
+    /// behavior for a caption-class UI element.
+    ///
+    /// Mirrors the identity-check pattern used by `loadArtwork`: we capture
+    /// the track id at dispatch, and on completion only assign if the user
+    /// hasn't already moved on to a different track (rapid next-track spam).
+    private func loadFormat(for track: Track, from asset: AVAsset) {
+        let capturedId = track.id
+        Task {
+            let format = await Self.readAudioFormat(from: asset)
+            await MainActor.run {
+                // Identity check: if the user has already skipped ahead,
+                // discard this stale result instead of flashing old info.
+                guard self.currentTrack?.id == capturedId else { return }
+                self.currentFormat = format
+            }
+        }
+    }
+
+    /// Pull an `AudioFormat` out of the asset's first audio track.
+    /// Returns nil if anything is missing, zero, or outside the codec
+    /// whitelist (hide-the-whole-badge rule — never show a partial badge).
+    private static func readAudioFormat(from asset: AVAsset) async -> AudioFormat? {
+        // First audio track — JamBox is a music player and the supported
+        // formats (mp3/m4a/flac/aiff/wav/alac/aac) don't normally have
+        // multiple audio tracks, but if they do we pick the first, which
+        // matches AVQueuePlayer's own playback behavior.
+        guard let tracks = try? await asset.loadTracks(withMediaType: .audio),
+              let audioTrack = tracks.first else {
+            return nil
+        }
+
+        guard let formatDescriptions = try? await audioTrack.load(.formatDescriptions),
+              let formatDesc = formatDescriptions.first else {
+            return nil
+        }
+
+        guard let asbdPointer = CMAudioFormatDescriptionGetStreamBasicDescription(formatDesc) else {
+            return nil
+        }
+        let asbd = asbdPointer.pointee
+
+        // Map mFormatID → short codec name. WAV/AIFF are both LPCM, so we
+        // disambiguate those two by file extension — the ONLY place this
+        // card looks at the extension, and only to distinguish between two
+        // LPCM containers (never to choose the codec itself).
+        let name: String
+        switch asbd.mFormatID {
+        case kAudioFormatFLAC:
+            name = "FLAC"
+        case kAudioFormatAppleLossless:
+            name = "ALAC"
+        case kAudioFormatMPEGLayer3:
+            name = "MP3"
+        case kAudioFormatMPEG4AAC,
+             kAudioFormatMPEG4AAC_HE,
+             kAudioFormatMPEG4AAC_HE_V2,
+             kAudioFormatMPEG4AAC_LD,
+             kAudioFormatMPEG4AAC_ELD,
+             kAudioFormatMPEG4AAC_Spatial:
+            name = "AAC"
+        case kAudioFormatLinearPCM:
+            // LPCM container disambiguation via the asset's URL extension.
+            // `.wav` and `.aiff`/`.aif` both hold LPCM; there's no codec-
+            // level signal for the container type.
+            if let urlAsset = asset as? AVURLAsset {
+                let ext = urlAsset.url.pathExtension.lowercased()
+                switch ext {
+                case "wav":
+                    name = "WAV"
+                case "aiff", "aif":
+                    name = "AIFF"
+                default:
+                    return nil
+                }
+            } else {
+                return nil
+            }
+        default:
+            return nil
+        }
+
+        // Sample rate — treat zero / non-finite as missing → hide badge.
+        let sampleRate = asbd.mSampleRate
+        guard sampleRate.isFinite, sampleRate > 0 else { return nil }
+
+        // Bit depth — zero means AVFoundation couldn't determine it, hide.
+        let bits = Int(asbd.mBitsPerChannel)
+        guard bits > 0 else { return nil }
+
+        // Float flag is only meaningful for LPCM. For compressed codecs
+        // (FLAC, ALAC, AAC, MP3) it's always false.
+        let isFloat = (asbd.mFormatID == kAudioFormatLinearPCM)
+            && (asbd.mFormatFlags & kAudioFormatFlagIsFloat) != 0
+
+        return AudioFormat(
+            name: name,
+            sampleRateHz: sampleRate,
+            bitDepth: bits,
+            isFloat: isFloat
+        )
     }
 
     // MARK: - Artwork

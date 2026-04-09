@@ -67,12 +67,17 @@ struct NowPlayingBar: View {
     @ViewBuilder
     private var metadataCell: some View {
         if let track = player.currentTrack {
+            // Font sizes are intentionally fixed pt (not Theme tokens) per
+            // card 0013 design spec. Card 0009 (Dynamic Type) in backlog is
+            // the proper home for a JamBox-level text-size multiplier; it
+            // can wrap these base numbers in a multiplier later without
+            // reinventing the hierarchy.
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Image(systemName: "music.note")
                         .frame(width: 14)
                     Text(track.displayName)
-                        .font(.headline)
+                        .font(.system(size: 15, weight: .semibold))
                         .lineLimit(1)
                         .overlay(PointerCursorView())
                         .onTapGesture { onTitleClick?(track) }
@@ -84,7 +89,7 @@ struct NowPlayingBar: View {
                         Text(track.artist)
                             .lineLimit(1)
                     }
-                    .font(.subheadline)
+                    .font(.system(size: 13, weight: .regular))
                 }
                 if !track.album.isEmpty {
                     HStack(spacing: 6) {
@@ -93,14 +98,30 @@ struct NowPlayingBar: View {
                         Text(track.album)
                             .lineLimit(1)
                     }
-                    .font(.subheadline)
+                    .font(.system(size: 13, weight: .regular))
+                }
+                // Format badge — card 0013. Hide entire line unless every
+                // field is known (per "hide-the-whole-badge" rule from the
+                // design spec). Quietest line in the hierarchy: secondary
+                // color, 11 pt monospaced, waveform glyph in the gutter.
+                if let format = player.currentFormat {
+                    HStack(spacing: 6) {
+                        Image(systemName: "waveform")
+                            .frame(width: 14)
+                        Text(format.visual)
+                            .lineLimit(1)
+                    }
+                    .font(.system(size: 11, weight: .regular, design: .monospaced))
+                    .foregroundStyle(themeManager.current.secondaryText ?? Color.secondary)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel(format.voiceOver)
                 }
             }
             .foregroundStyle(themeManager.current.primaryText)
             .frame(maxWidth: .infinity, alignment: .leading)
         } else {
             Text("Nothing playing")
-                .font(.headline)
+                .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(themeManager.current.primaryText)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -130,7 +151,7 @@ struct NowPlayingBar: View {
 
     private var leftTimestampCell: some View {
         Text(formatTime(displayedPosition))
-            .font(.caption)
+            .font(.system(size: 12, weight: .regular, design: .monospaced))
             .monospacedDigit()
             .foregroundStyle(themeManager.current.secondaryText ?? Color.secondary)
     }
@@ -154,7 +175,7 @@ struct NowPlayingBar: View {
 
     private var rightTimestampCell: some View {
         Text(formatTime(clock.duration))
-            .font(.caption)
+            .font(.system(size: 12, weight: .regular, design: .monospaced))
             .monospacedDigit()
             .foregroundStyle(themeManager.current.secondaryText ?? Color.secondary)
     }
