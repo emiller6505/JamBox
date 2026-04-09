@@ -429,4 +429,10 @@ Two MINOR concerns surfaced that only become visible once real code exists: a br
 Leaving card in `qa/` for the manager to close. Child cards filed with `parent: 0012`.
 
 ## Manager Decision
-*Filled in by the manager when closing or kicking back.*
+
+2026-04-08 — APPROVE WITH CHILD CARDS. QA-12 audit passed all acceptance and applicable invariants. Designer post-QA review (§6c) re-walked the original risks (all PASS or accepted-as-deferred) and surfaced three new concerns, all filed as child cards with parent: 0012:
+- 0014 (ready) — scrub handle briefly flashes at left edge during resume because cheap-init Track has duration: 0; MINOR.
+- 0015 (ready) — narrow race where async duration-clamp Task can yank the user mid-playback if they fast-double-click the resumed track; MINOR.
+- 0016 (backlog) — smart track-identity reconciliation when saved URL is gone; FUTURE.
+
+None rise to BLOCKER or MAJOR. Closing 0012 to done/. Final by-ear check happens during user manual validation of the Release build.
