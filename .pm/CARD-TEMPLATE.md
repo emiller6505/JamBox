@@ -2,8 +2,9 @@
 id: NNNN
 title: <imperative one-liner: "Add X", "Fix Y", "Refactor Z">
 created: YYYY-MM-DD
-needs_design: false       # set true to require a designer pass before engineering
-designer: null            # set when dispatched to a designer
+needs_designer: true      # set false ONLY for pure refactors with zero user-visible delta
+designer: null            # set when dispatched to a designer (pre-engineering)
+design_review: null       # set when dispatched to a designer for the post-QA review
 engineer: null
 qa: null
 parent: null
@@ -23,7 +24,10 @@ acceptance:
 Why this card exists. Link to roadmap line, user quote, screenshot, or parent card.
 
 ## Design
-*Filled in by the designer BEFORE engineering starts. Required when `needs_design: true`. Otherwise omit. See .pm/README.md §4b.*
+*Filled in by the designer BEFORE engineering starts. Required when `needs_designer: true`. For non-visual cards, collapses to "no visual change" + a one-line note. See .pm/README.md §4b.*
+
+## User Risks & Edge Cases
+*Filled in by the designer BEFORE engineering starts. Required when `needs_designer: true`. The designer's voice-of-the-user pass: happy path, empty/malformed/scale/concurrency/wrong-actions/a11y/recovery. Each item tagged [MUST HANDLE] / [NICE TO HANDLE] / [FUTURE WORK] / [WONT HAPPEN]. See .pm/README.md §4b step 5.*
 
 ## Plan
 *Filled in by the engineer during plan mode, BEFORE any code edits. See .pm/README.md §5.*
@@ -58,6 +62,15 @@ Why this card exists. Link to roadmap line, user quote, screenshot, or parent ca
 ### Invariants
 
 ### Findings
+
+### Recommendation
+
+## Design Review
+*Filled in by the designer AFTER QA approves. Required when `needs_designer: true`. See .pm/README.md §6c.*
+
+### Original risks revisited
+
+### Newly surfaced concerns
 
 ### Recommendation
 

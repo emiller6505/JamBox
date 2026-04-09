@@ -7,8 +7,8 @@
 ## 1. Roles
 
 - **Manager** — the human's proxy. Receives feature requests, asks clarifying questions, writes cards, dispatches agents, processes design and QA reports, and closes cards. There is exactly one manager.
-- **Designer agent** — defines the *visual and interaction spec* for cards that have a meaningful UI surface. The designer fills in the card's `## Design` section BEFORE the engineer starts planning. Output is words, not code: layout, hierarchy, copy, color/typography choices (always referencing existing `Theme.swift` tokens where possible), sketches in ASCII or markdown, and explicit do-not-do guardrails. Designers may also produce static asset deliverables (HTML/CSS for landing pages, SVG icons, etc.) when the card IS the design artifact. Multiple designers may run concurrently on different cards.
-- **Engineer agent** — implements one card at a time. There may be many engineers running concurrently. Each engineer is spawned with a specific card id; it does not browse the board for work. If a card has a `## Design` section, the engineer treats it as binding spec and does not relitigate visual choices in plan mode.
+- **Designer agent** — wears two hats on every card it's assigned to. **(1) Visual and interaction spec:** defines layout, hierarchy, copy, color/typography (referencing existing `Theme.swift` tokens where possible), sketches in ASCII or markdown, and explicit do-not-do guardrails. May produce static asset deliverables (HTML/CSS for landing pages, SVG icons) when the card IS the design artifact. **(2) User advocate and chaos predictor:** the designer is the voice of the real user in the room. Studies how comparable apps (iTunes, Apple Music, Spotify, Foobar2000, VLC, Finder, etc.) handle the same surface. Brainstorms the happy path AND the edge cases: empty states, malformed input, interrupted flows, double-clicks, rapid repeated actions, huge libraries, missing files, permission denials, race conditions, accessibility, keyboard-only users, the user who does the "wrong" thing first. Surfaces these as written concerns BEFORE engineering plans, so the engineer can either handle them or consciously defer them. The designer's `## User Risks & Edge Cases` section is binding: every item must be either addressed by the engineer's plan, deferred with justification, or filed as a child card. Designers also do a short post-QA pass (§6c) asking "did the implementation miss anything I flagged, or anything I should have flagged?" Multiple designers may run concurrently on different cards.
+- **Engineer agent** — implements one card at a time. There may be many engineers running concurrently. Each engineer is spawned with a specific card id; it does not browse the board for work. If a card has a `## Design` section, the engineer treats it as binding spec and does not relitigate visual choices in plan mode. If a card has a `## User Risks & Edge Cases` section, the engineer must address every item in `## Plan` — either by handling it in scope, by explicit deferral with reasoning, or by filing a follow-up child card before implementation begins.
 - **QA agent** — spawned fresh per card. The QA's only job is to audit one card's completed engineer (and designer, if applicable) work against its acceptance criteria, the design spec, and the project-wide invariants (§7). QA never writes feature code. QA may create new cards for issues it finds. Multiple QA agents may run concurrently on different cards.
 
 Agents are spawned by the manager via the `Agent` tool. They terminate when their assigned task is complete — there is no long-running process to "kill."
@@ -86,13 +86,15 @@ Append-only chronological record. Newest at bottom.
 ## 4. Lifecycle
 
 ```
-backlog → ready → [design] → in-progress → qa → done
-                                  ↑         ↓
-                                  └─────────┘
-                                  (kickback on QA or design fail)
+backlog → ready → [design] → in-progress → qa → [design-review] → done
+                      ↑                           ↑           ↓
+                      └───────────────────────────┴───────────┘
+                       (kickback on QA fail or design-review escalation)
 ```
 
-The `[design]` step is optional. It is mandatory for cards flagged `needs_design: true` in frontmatter. When present, the manager dispatches a designer agent BEFORE any engineer. The designer fills in `## Design`, leaves the card in `design/` while working, then moves it back to `ready/` (with a log line and commit) when handing off to engineering. Cards without `needs_design: true` skip the design lane entirely and go straight from `ready/` to `in-progress/`.
+The `[design]` step is optional. It is mandatory for cards flagged `needs_designer: true` in frontmatter. When present, the manager dispatches a designer agent BEFORE any engineer. The designer fills in `## Design` and `## User Risks & Edge Cases`, leaves the card in `design/` while working, then moves it back to `ready/` (with a log line and commit) when handing off to engineering. Cards without `needs_designer: true` skip the design lane entirely and go straight from `ready/` to `in-progress/`.
+
+The `[design-review]` step is also conditional on `needs_designer: true`. After QA approves a card, the manager re-dispatches a designer (any designer, not necessarily the original) for a short post-QA pass (§6c) before closing. This pass exists to catch user-facing edge cases the engineer and QA missed. The card stays in `qa/` during this pass; the designer either signs off (manager moves to `done/`) or escalates concerns back to `in-progress/` or as new child cards. Cards without `needs_designer: true` skip this step too and go straight from `qa/` to `done/` on QA approval.
 
 Every transition: `mv` the file + append a `## Log` line + commit `pm: <id> → <lane>`.
 
@@ -105,26 +107,51 @@ Kickback flow when QA finds issues:
 
 ---
 
-## 4b. **MANDATORY for designers: spec before code**
+## 4b. **MANDATORY for designers: spec + advocate before code**
 
-A designer is dispatched only on cards flagged `needs_design: true`. The designer is the visual authority on that card. Engineering treats `## Design` as binding spec.
+A designer is dispatched on every card flagged `needs_designer: true`. The designer wears two hats: visual authority AND user advocate / chaos predictor. Engineering treats `## Design` and `## User Risks & Edge Cases` as binding spec.
+
+When to set `needs_designer: true`: any card with user-visible behavior. This includes purely visual changes, but ALSO includes cards that look "internal" but change how the user interacts with the app — keyboard shortcuts, sort/filter logic, queue behavior, error messages, file handling, performance under load. Pure refactors with zero user-visible delta are the only cards that should leave the flag false.
 
 Designer workflow:
 
 1. Confirm assignment: set `designer:` in frontmatter, move card from `ready/` to `design/`, log entry, commit `pm: <id> → design`.
-2. Read the card's `## Context`, the user request, and any referenced screenshots or assets. Read `JamBox/Theme.swift` to understand existing color/typography/spacing tokens — your spec MUST reuse these tokens by name where it touches in-app surfaces. For out-of-app surfaces (landing pages, marketing assets, GitHub READMEs, icons), you may invent fresh visual choices but should still reference the JamBox brand: phonograph icon (`docs/phonograph.png`), the candy theme palette (hot pink → deep purple → cyan), the minimalist tone.
-3. Write the `## Design` section. Cover, at minimum:
+2. Read the card's `## Context`, the user request, and any referenced screenshots or assets. Read `JamBox/Theme.swift` for in-app tokens. For visual work on in-app surfaces, your spec MUST reuse Theme tokens by name. For out-of-app surfaces (landing pages, marketing assets, GitHub READMEs, icons), invent fresh visual choices but reference the JamBox brand: phonograph icon (`docs/phonograph.png`), candy palette (hot pink → deep purple → cyan), minimalist tone.
+3. **Study comparable apps.** Before writing anything, think through how iTunes / Apple Music / Spotify / Foobar2000 / VLC / Finder (or whichever is closest to the surface in question) handle the same feature. What did they get right? What gotchas do their users hit? You don't have to copy them, but you should know what the user's mental model already is so your design either matches it or has a clear reason not to.
+4. Write the `## Design` section (visual spec). Cover, at minimum:
    - **Visual direction:** one paragraph naming the mood (minimalist? vibrant? retro?), the references it pulls from, and the emotional read it should produce. Keep it specific.
    - **Layout:** ASCII sketch, markdown wireframe, or numbered section breakdown. Annotate every element's role.
    - **Copy:** every user-facing string the engineer should ship, verbatim. Engineering should not have to write copy.
    - **Color & typography:** named tokens (from `Theme.swift` for in-app, or hex codes for out-of-app). Specify which font, weight, size for each text element.
-   - **Spacing & sizing:** approximate dimensions for non-text elements (logo size, hero padding, button hit-targets). For in-app, prefer existing pattern matches over absolute pixel values.
+   - **Spacing & sizing:** approximate dimensions for non-text elements. For in-app, prefer existing pattern matches over absolute pixel values.
    - **Interaction notes:** hover/focus/active states, animations, scroll behavior, anything dynamic.
-   - **Asset list:** every image, icon, or font file needed. Note where they live in the repo (or where the engineer should fetch them).
-   - **Do-not-do guardrails:** explicit list of things the engineer should NOT do (e.g. "do not add a stock photo of headphones," "do not change the dock icon," "do not reuse the candy gradient on the dark theme"). The point is to head off well-intentioned drift.
-4. If the card IS the design artifact (e.g. landing page, static HTML/CSS, SVG icon), the designer also produces the artifact files in addition to the spec. In that case the same agent is functioning as designer + engineer for one card and the engineer step is collapsed — note this in the log.
-5. Self-audit your spec: re-read the card's acceptance bullets and confirm every UI-touching bullet is unambiguously answered by the spec. If an acceptance bullet leaves a visual choice underspecified, the spec is incomplete — fix it before handing off.
-6. Move the card back to `ready/`, log entry, commit `pm: <id> design ready`. Notify the manager.
+   - **Asset list:** every image, icon, or font file needed.
+   - **Do-not-do guardrails:** explicit list of things the engineer should NOT do.
+
+   For cards with no visual surface at all (e.g. a sort algorithm change), the visual spec collapses to a one-line "no visual change" note and the work shifts to step 5.
+
+5. Write the `## User Risks & Edge Cases` section. This is where you advocate for the user. Brainstorm and document, at minimum:
+   - **Happy path:** the 80% case, walked through end-to-end as the user experiences it. What does it feel like? What does it sound like (this is a music player)?
+   - **Empty / first-run states:** no library, no metadata, no artwork, no previous selection, fresh install.
+   - **Malformed or hostile input:** corrupt files, unicode in filenames, zero-byte tracks, files that change underneath the app, files that lose accessibility (sandbox bookmarks gone stale).
+   - **Scale stress:** 10 tracks, 1000 tracks, 50,000 tracks. What breaks? Where does the UI lag? Where does memory blow up? Where does a 4Hz observer become a problem?
+   - **Concurrency / interruption:** rapid double-clicks, clicking during loading, sort + search at the same time, changing folders mid-playback, system sleep during gapless transition.
+   - **"Wrong" user actions:** the user who tries the most off-label thing first. The user who keyboard-mashes. The user who drags 200 files at once. The user who has the search field focused and then hits a media key.
+   - **Accessibility & input modes:** keyboard-only navigation, VoiceOver, larger Dynamic Type, reduced-motion, dark/light theme, second-monitor handoff, locale differences.
+   - **Failure recovery:** what happens when something goes wrong? Is the error invisible? Does the user know what to do next? Is the app left in a usable state?
+   - **Project-specific landmines:** AVURLAsset rules (§7.1), gapless lookahead (§7.2), two-phase loading (§7.3), sandbox bookmark balance (§7.4). Call out anything in the card's surface that touches these.
+
+   For each risk, write one of:
+   - **[MUST HANDLE]** — engineering must address in this card. Acceptance bullets should reflect it.
+   - **[NICE TO HANDLE]** — engineering should try, but may defer with reasoning in `## Plan`.
+   - **[FUTURE WORK]** — out of scope for this card; designer will file a child card if approved by manager.
+   - **[WONT HAPPEN]** — explicitly out of scope, with one-line reasoning so future agents don't relitigate.
+
+   If a [MUST HANDLE] risk is not already covered by an acceptance bullet, add the bullet (designers may edit `acceptance:` in frontmatter; log the change).
+
+6. If the card IS the design artifact (landing page, static HTML/CSS, SVG icon), the designer also produces the artifact files in addition to the spec. The same agent is functioning as designer + engineer for one card and the engineer step is collapsed — note this in the log.
+7. Self-audit your spec: re-read every acceptance bullet and confirm it's unambiguously answered by `## Design` (visual) or covered by `## User Risks & Edge Cases` (behavioral). If anything is underspecified, fix it before handing off.
+8. Move the card back to `ready/`, log entry, commit `pm: <id> design ready`. Notify the manager.
 
 If during engineering the spec turns out to be visually broken or impossible to implement faithfully: engineer kicks the card back to `design/` (not `blocked/`). Manager respawns the designer with the engineer's findings.
 
@@ -210,6 +237,40 @@ QA may not skip any of these steps, even on a one-line card. The point of QA is 
 
 ---
 
+## 6c. **MANDATORY for designers: post-QA edge-case review**
+
+After QA approves a card flagged `needs_designer: true`, the manager re-dispatches a designer agent (any designer; not necessarily the original) for a short post-QA review BEFORE the card moves to `done/`. This is the second swing at user advocacy. The first pass predicted edge cases up front; this pass checks whether the implementation actually handled them and whether reality surfaced anything the designer missed the first time.
+
+The card stays in `qa/` during this pass. The designer does NOT re-run the §6b checklist — that's QA's job. The designer's only question is: **"Looking at this implementation as a real user about to encounter it, what edge cases or behaviors does it not account for, and are those worth advocating for now or filing as future work?"**
+
+Designer post-QA workflow:
+
+1. Set `design_review:` in frontmatter, log entry, commit `pm: <id> design-review start`.
+2. Read in order: the original `## User Risks & Edge Cases` (your first-pass predictions), `## Plan` (how engineering chose to handle them), `## Self-Audit` (what engineering claims it did), `## QA Report` (what QA verified). Then read the `git diff` for touched files — not for code-quality review, but to understand what the user will actually experience.
+3. Re-walk every `[MUST HANDLE]` and `[NICE TO HANDLE]` item from the original `## User Risks & Edge Cases`. For each: PASS / FAIL / DEFERRED with one-line evidence.
+4. Then do fresh brainstorming. Now that the implementation exists, what NEW edge cases come to mind that you didn't think of in step 5 of §4b? Walk the same categories (empty, malformed, scale, concurrency, wrong actions, accessibility, recovery). The point is that seeing real code often surfaces risks that abstract design cannot.
+5. Write the `## Design Review` section into the card with this structure:
+   ```
+   ### Original risks revisited
+   - [PASS/FAIL/DEFERRED] <risk from §4b> — <evidence>
+   ### Newly surfaced concerns
+   - [BLOCKER/MAJOR/MINOR/FUTURE] <description> — <reasoning>
+   ### Recommendation
+   - [APPROVE / KICK BACK / APPROVE WITH CHILD CARDS]
+   ```
+6. Classification rules for newly surfaced concerns:
+   - **BLOCKER** — the user will hit this on day one and the app will be visibly broken. Kick back to `in-progress/`.
+   - **MAJOR** — the user will hit this within their first session and be confused or annoyed, but the app keeps working. Designer's call: kick back, OR file a child card and approve.
+   - **MINOR** — real but rare; file a child card in `ready/` with `parent: <id>` and approve.
+   - **FUTURE** — file in `backlog/` with `parent: <id>` and approve.
+7. Commit the updated card. If kicking back, `git mv` to `in-progress/` and assign back to the original engineer. If approving, leave the card in `qa/` for the manager to close. Notify the manager with a one-paragraph summary.
+
+Designer's job here is NOT to relitigate engineering choices that work for the user. It is to be the user's voice one more time before the card ships. If everything passes, the designer says so plainly and approves quickly. The post-QA pass should usually be short — minutes, not hours — unless something is genuinely wrong.
+
+Cards without `needs_designer: true` skip §6c entirely. QA approval moves them straight to `done/`.
+
+---
+
 ## 7. Project-wide invariants (always in scope)
 
 These are non-negotiable. Any card that violates them fails QA.
@@ -235,17 +296,34 @@ These are non-negotiable. Any card that violates them fails QA.
 
 ## 9. Quick reference
 
-### Designer loop
+### Designer loop (pre-engineering, §4b)
 ```
 1. git pull --rebase
 2. Read .pm/README.md and the assigned card in .pm/ready/
 3. mv card to .pm/design/, set designer:, log, commit
 4. Read Theme.swift, the user request, any referenced assets
-5. Write ## Design covering visual direction, layout, copy, color/type, spacing, interaction, assets, guardrails
-6. If the card IS the design artifact, also produce the artifact files
-7. Self-audit: every UI acceptance bullet unambiguously answered
-8. mv to .pm/ready/, log, commit, notify manager
-9. STOP.
+5. Study how comparable apps (iTunes, Apple Music, Spotify, Foobar2000, VLC, Finder) handle this surface
+6. Write ## Design (visual spec) — collapses to "no visual change" for non-visual cards
+7. Write ## User Risks & Edge Cases — happy path, empty/malformed/scale/concurrency/wrong-actions/a11y/recovery, each tagged [MUST HANDLE]/[NICE TO HANDLE]/[FUTURE WORK]/[WONT HAPPEN]
+8. Add any [MUST HANDLE] items to acceptance: in frontmatter
+9. If the card IS the design artifact, also produce the artifact files
+10. Self-audit: every acceptance bullet unambiguously answered by ## Design or ## User Risks
+11. mv to .pm/ready/, log, commit, notify manager
+12. STOP.
+```
+
+### Designer post-QA loop (§6c)
+```
+1. git pull --rebase
+2. Read .pm/README.md, then the card in .pm/qa/
+3. Set design_review: in frontmatter, log, commit
+4. Read in order: ## User Risks & Edge Cases → ## Plan → ## Self-Audit → ## QA Report → git diff
+5. Re-walk every [MUST HANDLE] / [NICE TO HANDLE] item from the original spec → PASS/FAIL/DEFERRED
+6. Fresh brainstorm: what NEW edge cases come to mind now that real code exists?
+7. Write ## Design Review (Original risks revisited / Newly surfaced concerns / Recommendation)
+8. BLOCKER → mv to in-progress/. MAJOR → designer's call (kickback or child card). MINOR → child card in ready/. FUTURE → child card in backlog/.
+9. Commit, notify manager with one-paragraph summary
+10. STOP.
 ```
 
 ### Engineer loop
@@ -253,12 +331,13 @@ These are non-negotiable. Any card that violates them fails QA.
 1. git pull --rebase
 2. Read .pm/README.md and the assigned card in .pm/ready/
 3. If card has ## Design, read it as binding spec — do NOT relitigate visual choices
-4. mv card to .pm/in-progress/, set engineer:, log, commit
-5. EnterPlanMode → write ## Plan → commit → ExitPlanMode
-6. Implement
-7. Self-audit (§6) → write ## Self-Audit
-8. mv to .pm/qa/, log, commit, notify manager
-9. STOP. Wait. Do not pick up another card.
+4. If card has ## User Risks & Edge Cases, every [MUST HANDLE] item must be addressed in your ## Plan (handle, defer with reasoning, or file a child card)
+5. mv card to .pm/in-progress/, set engineer:, log, commit
+6. EnterPlanMode → write ## Plan → commit → ExitPlanMode
+7. Implement
+8. Self-audit (§6) → write ## Self-Audit
+9. mv to .pm/qa/, log, commit, notify manager
+10. STOP. Wait. Do not pick up another card.
 ```
 
 ### QA loop
@@ -277,12 +356,17 @@ These are non-negotiable. Any card that violates them fails QA.
 ### Manager loop
 ```
 1. Receive feature from human, ask clarifying questions
-2. Write card in .pm/ready/
-3. Spawn engineer agent pointed at the card id
-4. When engineer hands off to qa/, spawn QA agent pointed at the card id
-5. Read QA report:
-   - APPROVE → mv to done/, write ## Manager Decision, commit, notify human
+2. Write card in .pm/ready/. Set needs_designer: true unless the card is a pure refactor with zero user-visible delta.
+3. If needs_designer: spawn designer agent (§4b). When designer hands back to ready/, proceed.
+4. Spawn engineer agent pointed at the card id
+5. When engineer hands off to qa/, spawn QA agent pointed at the card id
+6. Read QA report:
    - KICK BACK → respawn original engineer with QA findings
    - CHILD CARDS → triage them; dispatch new engineers as needed
-6. When all related cards (including QA-spawned children) are in done/, the feature is closed.
+   - APPROVE → if needs_designer, go to step 7. Otherwise mv to done/ now.
+7. (If needs_designer.) Spawn designer agent for the post-QA review (§6c). Read ## Design Review:
+   - APPROVE → mv to done/, write ## Manager Decision, commit, notify human
+   - KICK BACK → respawn original engineer with the design review's findings
+   - CHILD CARDS → triage and dispatch
+8. When all related cards (including QA- and design-review-spawned children) are in done/, the feature is closed.
 ```
