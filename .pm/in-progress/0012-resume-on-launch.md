@@ -176,15 +176,65 @@ Two [MUST HANDLE] items surfaced above are not cleanly covered by the existing a
 (See acceptance bullet changes in frontmatter.)
 
 ## Plan
-*Filled in by the engineer during plan mode, BEFORE any code edits.*
 
 **Approach:**
 
+Add a `PlaybackState` Codable payload (schema `version: 1`, `trackURL: URL`, `position: Double`) persisted to `UserDefaults` under key `jambox.playback.state`. Tiny, atomic, no extra files.
+
+1. **Single construction site (§7.1).** Extract a private `makeAssetItem(for url: URL) -> AVPlayerItem` helper in `PlayerEngine` that builds `AVURLAsset(url:options: Self.assetOptions)` then wraps it. Replace the two existing construction sites (`play(startingAt:)` and `enqueueMoreIfNeeded()`) with calls to this helper, then use it from the new `resume(savedState:)` method too. After this card there is exactly one `AVURLAsset(...)` line in `PlayerEngine.swift`.
+
+2. **New `PlayerEngine.resume(from:position:)` method.** Signature roughly: `func resume(trackIndex: Int, position: TimeInterval) async`. It:
+   - Guards `trackIndex` in range, `queuePlayer.removeAllItems()`, sets `currentIndex`.
+   - Synchronously builds and inserts up to `lookAhead` items via `makeAssetItem` (mirrors `play(startingAt:)`) — lookahead filled before return, satisfies §7.2 and acceptance bullet 4.
+   - Synchronously sets `currentTrack = tracks[index]`, seeds `clock.position = clamped(position)` BEFORE the seek so the scrub bar never flashes 0 (acceptance, "do not start at 0 then jump").
+   - `await` loads the first item's asset `.duration`. If load fails or duration is non-finite/≤0, tear down (`removeAllItems`, clear `currentTrack`, clear `clock`) and return `false` — "silent clear" path. Saved state caller clears UserDefaults on false.
+   - Clamp position: `let clamped = max(0, min(position, duration))`.
+   - Set `clock.duration = duration`, update `clock.position = clamped`.
+   - Call `queuePlayer.seek(to: CMTime(seconds: clamped, preferredTimescale: 600))` — fire-and-forget. Do NOT call `queuePlayer.play()`.
+   - Trigger `loadArtwork(for:)`.
+   - Returns Bool success.
+
+   Alternative considered: threading `startingAt:` + `autoplay:` flags through `play`. Rejected: `play(startingAt:)` has a very tight shape (sync, no await on duration), and the resume path genuinely needs to `await` duration for clamp + sanity. Extracting `makeAssetItem` is the cleaner single-construction-site fix; the resume method is a sibling to `play(startingAt:)`, not a mode of it.
+
+3. **`AppModel` save/restore plumbing.**
+   - Add `PlaybackState: Codable` (version: Int = 1, trackURL: URL, position: Double).
+   - Add `savePlaybackState()` (reads `player.currentTrack`, `player.clock.position`, writes JSON to UserDefaults; if no current track, removes the key).
+   - Add `clearPlaybackState()`.
+   - Add `loadPlaybackState() -> PlaybackState?` (decode via `try?`, return nil if schema version != 1, if URL doesn't exist on disk, or decode fails).
+   - In `loadFolder(_:)`, AFTER `player.loadTracks(quickTracks)` and BEFORE launching the metadata task, call `tryRestorePlayback(within: quickTracks)`:
+     - Read saved state. If none → return.
+     - Verify `FileManager.default.fileExists(atPath: saved.trackURL.path)`. If not → `clearPlaybackState()`, return.
+     - `firstIndex(where: { $0.url == saved.trackURL })` in `quickTracks`. If nil (saved URL not in this folder) → clear, return.
+     - Spawn a `Task { @MainActor in await player.resume(trackIndex:position:); if !ok { clearPlaybackState() } }`. Does not block `loadFolder` — but because `resume` seeds `currentTrack` + `clock.position` synchronously at the top, the UI shows the populated bar immediately; only the async duration load for clamp is deferred. Wait — per acceptance "resume must happen on the same tick as `loadTracks`" and the concurrency risk note. The SYNCHRONOUS portion (currentTrack + seed + lookahead insert + seek) runs before any user input can land because it happens inside `loadFolder` on the main actor with no suspend point until after the seek. The `await duration` is for clamp purposes only; we've already seeded `clock.position` to the raw saved value (already clamped by a sanity `max(0, min(saved, .greatestFiniteMagnitude))` and finite check) so the UI is stable. Post-duration-load we re-clamp and re-seek if needed.
+   - Actually, to avoid the complexity: split `resume` into `resumeSync` (does everything except the duration clamp re-seek) returning quickly, and a follow-up `Task` that awaits duration and re-clamps/re-seeks. This keeps `loadFolder` purely synchronous for the user-visible seeding.
+   - **Revised design:** `resume(trackIndex:position:)` is MainActor synchronous; it builds items, inserts, sets currentTrack, seeds clock, seeks. It also launches an internal `Task` to await the duration and re-clamp/re-seek if the saved position exceeds the real duration, and to set `clock.duration` from the loaded value. If duration load fails outright, the track stays queued at position 0 — tolerable per "seek fails" risk (NICE TO HANDLE). Actually acceptance says "Duration load fails on the resumed asset: treat as unresumable. Silent clear." So the internal task must clear state via a callback.
+   - **Final design:** `PlayerEngine.resume(trackIndex:position:)` synchronously seeds UI + queue, launches Task for duration validation. `AppModel` passes a closure `onFailure: { self.clearPlaybackState(); self.player.clearPlayback() }` invoked on the MainActor. Or simpler: engine calls its own `teardownCurrent()` on failure and publishes via currentTrack=nil; AppModel observes and clears. Cleanest: engine calls a `didFailResume` closure.
+
+4. **Throttled save timer.** In `PlayerEngine` (or `AppModel`). Owning in AppModel is cleaner so PlayerEngine stays concerned only with audio, but the timer needs `isPlaying` and `currentTrack`+`clock.position`. Use Combine: subscribe to `player.$isPlaying` in AppModel; when it flips true, start a repeating `Timer.scheduledTimer(withTimeInterval: 5, repeats: true)` that calls `savePlaybackState()`. When it flips false, invalidate the timer. This exactly matches "only fires while `isPlaying == true`".
+
+5. **Save on quit.** Observe `NSApplication.willTerminateNotification` in `AppModel.init`. In the handler, call `savePlaybackState()` unconditionally (even if paused — per acceptance bullet 1 and 11). Since this is a notification on main queue, MainActor is fine.
+
+6. **ContentView / media keys:** no changes expected. Resumed state sets `currentTrack != nil`, so `togglePlayPause`, space-bar, and media keys Just Work.
+
 **Files:**
+- `JamBox/PlayerEngine.swift` — add `makeAssetItem` helper, collapse two existing construction sites, add `resume(trackIndex:position:onFailure:)` method, add `clearPlayback()` helper.
+- `JamBox/AppModel.swift` — add `PlaybackState` struct, save/load/clear helpers, call restore in `loadFolder`, hook willTerminate, hook isPlaying timer.
+- (Maybe) `JamBox/ContentView.swift` — no edit expected; verify onAppear sort restore doesn't clobber currentTrack. `reorderTracks` preserves currentTrack, so we're fine.
+
+Expected `touches:` stays as in frontmatter, possibly drop `ContentView.swift` in self-audit reconciliation.
 
 **Risks:**
+- **§7.1 (AVURLAsset):** collapsing to `makeAssetItem` is the whole point — verify post-refactor that no `AVURLAsset(url:...)` exists outside the helper and the existing `findArtwork` (which must keep its own since it's a static metadata-loading path — that's acceptable since it's not constructing an `AVPlayerItem`). The helper only applies to the player-queue path.
+- **§7.2 (gapless):** resume must insert all `lookAhead` items at construction time. `enqueueMoreIfNeeded()` is already called by `handleItemChange` on actual track change, so once play begins it'll top up normally. Manual verification: after resume + press play, listen for gapless transition at track 1→2 boundary.
+- **§7.3 (two-phase):** resume uses the cheap `init(url:)` Track; `updateMetadata` later swaps via `tracks = tracks.map { lookup[$0.id] ?? $0 }` + `if let current = currentTrack, let enriched = lookup[current.id] { currentTrack = enriched }`. That runs on the MainActor, does NOT touch the AVPlayerItem queue — verified safe. The scrub bar reads from `clock.duration` which is set from the AVPlayerItem's asset (not Track.duration) in the periodic observer, so the swap can't clobber it.
+- **§7.4 (bookmarks):** `resolveBookmark` already starts scoped access on the folder; the resume path does nothing additional. No per-track bookmark.
+- **Scrub bar flash:** seed `clock.position` synchronously before the seek; verify the periodic time observer isn't running when paused (the observer fires at 4Hz but reads `currentTime()`, which after a pending seek but paused status should be the seek target — AVPlayer returns the last-committed time). Worst case the observer overwrites `clock.position` with the current time, which is the same value. No flash.
+- **Timer leak:** invalidate on deinit and on isPlaying=false. AppModel has no deinit, but the Timer is stored as `weak var`? No — `Timer.scheduledTimer` retains its target; we'll use block-based `Timer.scheduledTimer(withTimeInterval:repeats:block:)` with `[weak self]` capture.
+- **Quit race:** `NSApplication.willTerminateNotification` fires on the main thread; AppModel is MainActor. Direct UserDefaults write in the handler is synchronous; `UserDefaults.standard.synchronize()` is legacy but calling `set` + immediate return is fine — CFPreferences flushes on app termination.
+- **Track URL equality across bookmark resolutions:** when a sandbox bookmark is resolved, the URL is "real" — URL equality (`==`) compares path components; two resolutions of the same bookmark should produce equal URLs. Track.url was scanned under the same scoped folder, so equality holds. Sanity check during implementation.
 
 **Open questions:**
+- None blocking. Designer explicitly left the "save during track transition" case as engineer's call (NICE TO HANDLE, either outgoing-at-end or incoming-at-0 is acceptable). I'll take whatever `player.currentTrack` + `clock.position` happen to be at notification time — if mid-transition the KVO may or may not have fired, producing either outcome, both acceptable.
 
 ## Log
 - 2026-04-08 — manager card created in ready/, sibling to 0013, will dispatch designer next
@@ -192,6 +242,7 @@ Two [MUST HANDLE] items surfaced above are not cleanly covered by the existing a
 - 2026-04-08 — designer-12 wrote ## Design (no-visual-change spec + guardrails) and ## User Risks & Edge Cases (walked every category from §4b step 5). Added two new acceptance bullets: (a) schema version field in saved-state payload, (b) throttled save timer pauses while playback is paused. Both surfaced as [MUST HANDLE] risks not covered by the original acceptance list.
 - 2026-04-08 — designer-12 self-audited: every acceptance bullet is answered either by the ## Design section (do-not-do guardrails, play-glyph decision, no-banner decision) or by a tagged risk in ## User Risks & Edge Cases (all file-missing, clamp, §7.1/2/3/4 landmines, schema, timer behavior). Handing back to ready/ for engineer dispatch.
 - 2026-04-08 — engineer-12 claimed card, moved ready/ → in-progress/
+- 2026-04-08 — engineer-12 wrote ## Plan (extract makeAssetItem helper, new PlayerEngine.resume method, AppModel save/load/clear, willTerminate hook, isPlaying-gated 5s timer)
 
 ## Self-Audit
 *Filled in by the engineer before handing off to QA. See .pm/README.md §6.*
