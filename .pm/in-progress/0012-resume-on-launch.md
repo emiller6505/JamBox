@@ -5,7 +5,7 @@ created: 2026-04-08
 needs_designer: true
 designer: designer-12
 design_review: null
-engineer: null
+engineer: engineer-12
 qa: null
 parent: null
 priority: P2
@@ -191,6 +191,7 @@ Two [MUST HANDLE] items surfaced above are not cleanly covered by the existing a
 - 2026-04-08 — designer-12 claimed card, moved ready/ → design/
 - 2026-04-08 — designer-12 wrote ## Design (no-visual-change spec + guardrails) and ## User Risks & Edge Cases (walked every category from §4b step 5). Added two new acceptance bullets: (a) schema version field in saved-state payload, (b) throttled save timer pauses while playback is paused. Both surfaced as [MUST HANDLE] risks not covered by the original acceptance list.
 - 2026-04-08 — designer-12 self-audited: every acceptance bullet is answered either by the ## Design section (do-not-do guardrails, play-glyph decision, no-banner decision) or by a tagged risk in ## User Risks & Edge Cases (all file-missing, clamp, §7.1/2/3/4 landmines, schema, timer behavior). Handing back to ready/ for engineer dispatch.
+- 2026-04-08 — engineer-12 claimed card, moved ready/ → in-progress/
 
 ## Self-Audit
 *Filled in by the engineer before handing off to QA. See .pm/README.md §6.*
