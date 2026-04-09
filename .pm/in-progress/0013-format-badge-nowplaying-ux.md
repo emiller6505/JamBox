@@ -304,15 +304,50 @@ Acceptance list is **unchanged**. No edits to frontmatter.
 3. **Dynamic Type / JamBox-level text-size multiplier.** Already filed as card 0009 in backlog. Coordination note in this card's risks.
 
 ## Plan
-*Filled in by the engineer during plan mode, BEFORE any code edits.*
 
 **Approach:**
 
+1. Introduce a new value type `AudioFormat` (struct, `Equatable`) in `PlayerEngine.swift`, alongside `PlaybackClock`. Fields: `name: String` (whitelist: FLAC/ALAC/MP3/AAC/WAV/AIFF), `sampleRateHz: Double`, `bitDepth: Int`, `isFloat: Bool`. Plus a computed `visual: String` (e.g. `"FLAC · 96 kHz · 24 bit"`) and `voiceOver: String` (`"Audio format: FLAC, 96 kilohertz, 24 bit"`). Centralizes copy formatting so `NowPlayingBar` just renders.
+2. Add `@Published var currentFormat: AudioFormat?` on **`PlayerEngine`** (NOT on `PlaybackClock`). Preserve the clock split documented at PlayerEngine.swift:20.
+3. In `handleItemChange(_:)`, when a new `item` arrives and the track is matched, clear `currentFormat = nil`, then kick off an async `Task` that reads the format from `item.asset` (reused — no new `AVURLAsset` constructed; §7.1 honored). Mirror `loadArtwork`'s identity-check pattern: capture the track `id` at dispatch and on completion verify `self.currentTrack?.id == capturedId` before assigning. On item-cleared path (nil), clear `currentFormat` too.
+4. The async fetch uses `asset.loadTracks(withMediaType: .audio)`, picks the **first** audio track, then `track.load(.formatDescriptions)`. From the first `CMAudioFormatDescription`, pull `AudioStreamBasicDescription` via `CMAudioFormatDescriptionGetStreamBasicDescription`. Map `asbd.mFormatID` via a whitelist:
+   - `kAudioFormatFLAC` → `"FLAC"`
+   - `kAudioFormatAppleLossless` → `"ALAC"`
+   - `kAudioFormatMPEGLayer3` → `"MP3"`
+   - `kAudioFormatMPEG4AAC` (and related AAC variants if trivially recognizable) → `"AAC"`
+   - `kAudioFormatLinearPCM` → disambiguate WAV vs AIFF by file extension on the asset's URL (both are LPCM containers; there's no codec-level signal for container type). This is the ONE place we look at the extension, and only to disambiguate between two LPCM containers — not to choose the codec.
+   - anything else → return nil (hide badge; do-not-do #13).
+5. Sample rate: `asbd.mSampleRate`. Convert to string via spec: divide by 1000; if fractional part non-zero (tolerance 1e-6), one decimal place with period `.`; else integer. Build with locale-independent `String(format:)`. Guard zero/negative → nil → hide.
+6. Bit depth: `asbd.mBitsPerChannel`. If zero, hide. If LPCM and float flag set (`kAudioFormatFlagIsFloat` in `mFormatFlags`) → `isFloat = true`. Spec: `"<N> bit"` or `"<N> bit float"`.
+7. In `NowPlayingBar.swift`:
+   - Apply the font bump: title → `.system(size: 15, weight: .semibold)`; artist → `.system(size: 13)`; album → `.system(size: 13)`; left/right timestamps → `.system(size: 12, design: .monospaced).monospacedDigit()`.
+   - Add the fourth line inside the metadata VStack (only when `currentTrack != nil` AND `player.currentFormat != nil`). HStack(spacing: 6): `Image(systemName: "waveform").frame(width: 14)` + `Text(format.visual)` at `.system(size: 11, design: .monospaced)`, colored with `themeManager.current.secondaryText ?? .secondary`, with `.accessibilityElement(children: .combine)` + `.accessibilityLabel(format.voiceOver)` and `.lineLimit(1)`.
+   - Transport icons: unchanged `.title2` per guardrails.
+   - Preserve `PointerCursorView`, scrub-decouple, onTitleClick callback.
+8. Track.swift: NO changes (do-not-do #13 + §7.3: format is not a bulk-loaded field). Remove from `touches:` if clean. I'll likely leave `Track.swift` out of touches — verify at self-audit.
+
 **Files:**
+
+- `JamBox/PlayerEngine.swift` — add `AudioFormat` struct, `@Published currentFormat`, async format fetch in `handleItemChange`, clear on item==nil, identity-check on completion.
+- `JamBox/NowPlayingBar.swift` — font-size bump on existing lines + new badge row in the metadata VStack.
+- `JamBox/Track.swift` — likely untouched. Will remove from `touches:` at self-audit if so.
 
 **Risks:**
 
+- **§7.1 (AVURLAsset):** Must reuse `item.asset` / `firstItem.asset as? AVURLAsset` or just `item.asset` (AVAsset suffices for `.loadTracks`/`.formatDescriptions`). Do NOT call `AVURLAsset(url:options:)` anywhere new. The only asset construction point in the queue is `PlayerEngine.makeAssetItem` — untouched.
+- **§7.2 (gapless):** No changes to `enqueueMoreIfNeeded`, queue management, or lookahead. Format fetch is side-effect-free w.r.t. the queue.
+- **§7.3 (two-phase loading):** Format is NOT added to `Track`. It's transient per-current-item state on `PlayerEngine`, like `currentArtwork`.
+- **Clock split (PlayerEngine.swift:20):** `currentFormat` goes on `PlayerEngine`, not `PlaybackClock`. 4Hz tick never touches it.
+- **Stale format on rapid next-track:** mirror `loadArtwork`'s `if self.currentTrack?.id == track.id` pattern — capture `id` at dispatch, check on completion.
+- **LPCM container disambiguation:** WAV vs AIFF is the only place where file extension matters, and only between two LPCM containers. Documented in code comment.
+- **Width budget:** Badge at worst case (`FLAC · 176.4 kHz · 32 bit float`) fits per designer's math (~220 pt of ~304 pt column at minWidth 500). `.lineLimit(1)` on badge protects against regression.
+- **Dynamic Type / card 0009:** fixed pt sizes (15/13/13/11/12) are deliberate per designer; card 0009 can wrap them in a multiplier later. Not preempted.
+- **Build:** no new files, so no `xcodegen generate` needed (§7.5).
+
 **Open questions:**
+
+- None blocking. For AAC, I'll treat `kAudioFormatMPEG4AAC` as `"AAC"`. If other AAC subtypes (`kAudioFormatMPEG4AAC_HE`, `_LD`, etc.) appear in a JamBox library, they'll also be labeled `"AAC"` — acceptable since the compact badge doesn't differentiate profile.
+- First-audio-track pick for multi-track files: documented here, trivially handled by `.first` on the returned audio tracks array.
 
 ## Log
 - 2026-04-08 — manager card created in ready/, sibling to 0012, will dispatch designer next
