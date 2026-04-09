@@ -245,6 +245,7 @@ Expected `touches:` stays as in frontmatter, possibly drop `ContentView.swift` i
 - 2026-04-08 — engineer-12 implemented: PlayerEngine.makeAssetItem helper collapses both queue construction sites; new resume(trackIndex:position:onFailure:) and clearPlayback(); AppModel PlaybackState struct (schema v1), save/load/clear/tryRestorePlayback, willTerminate observer, isPlaying-gated 5s Timer; build green; touches reconciled (ContentView not modified)
 - 2026-04-08 — engineer-12 self-audited (all 7 steps), moving to qa/
 - 2026-04-08 — qa-12 claimed card, starting §6b independent audit
+- 2026-04-08 — qa-12 completed §6b: read both touched files top-to-bottom, walked `git diff f031f16` line by line, verified §7.1 single construction site via grep (3 AVURLAsset sites, all pass assetOptions; single queue-path site at PlayerEngine.swift:72), ran independent `xcodebuild ... build` → ** BUILD SUCCEEDED **. All acceptance bullets PASS, all §7 invariants PASS. Recommendation: APPROVE.
 
 ## Self-Audit
 
@@ -287,15 +288,51 @@ Expected `touches:` stays as in frontmatter, possibly drop `ContentView.swift` i
 7. **Scope check:** Nothing outside the card's spec. No drive-by refactors, no style fixes, no unrelated cleanups. The `makeAssetItem` extraction was explicitly called for by §7.1 + designer guidance + acceptance bullet 8.
 
 ## QA Report
-*Filled in by the QA agent. See .pm/README.md §6b.*
+
+Independent §6b audit by qa-12. Read both touched files top-to-bottom, walked `git diff f031f16 -- JamBox/PlayerEngine.swift JamBox/AppModel.swift` line by line, verified construction sites via grep, built locally.
 
 ### Acceptance
 
+- [PASS] **Save on quit captures current track + position; clears if nothing playing** — `AppModel.savePlaybackState()` at AppModel.swift:241-253 clears when `player.currentTrack == nil`, otherwise encodes `PlaybackState(version, trackURL, position)`. Hooked from `willTerminateNotification` observer at AppModel.swift:82-95, which runs unconditionally (independent of timer).
+- [PASS] **Throttled 5s save during playback** — `handleIsPlayingChanged` at AppModel.swift:295-310 creates a repeating 5s block-based `Timer` on play-start, invalidates on pause. Driven by the `player.$isPlaying` sink at AppModel.swift:71-76.
+- [PASS] **On next launch, restore populated-but-paused now-playing bar** — `loadFolder` at AppModel.swift:153 calls `tryRestorePlayback(within: quickTracks)` synchronously right after `player.loadTracks(quickTracks)`. `tryRestorePlayback` at AppModel.swift:262-287 hands off to `player.resume(...)` at PlayerEngine.swift:268, which seeds `currentTrack` + `clock.position` + queue lookahead and issues a seek WITHOUT calling `queuePlayer.play()`. `timeControlStatus` therefore stays `.paused` → `isPlaying == false`.
+- [PASS] **One press of space resumes; first transition is gapless (lookahead filled before play)** — PlayerEngine.swift:276-279 inserts `lookAhead = 3` items synchronously in the resume loop, identical to `play(startingAt:)` at PlayerEngine.swift:239-242. Space-bar path via existing `togglePlayPause` is untouched. Gapless verify-by-ear is a manual check; code path is correct.
+- [PASS] **Missing file / URL-not-in-folder / stale bookmark → silent clear** — `tryRestorePlayback` at AppModel.swift:268-279 checks `FileManager.fileExists` then `quickTracks.firstIndex(where:)`. Both failure paths call `clearPlaybackState()` and return. If the folder bookmark itself is gone, `loadSavedFolder` at AppModel.swift:127-132 returns early and `tryRestorePlayback` is never called, so the saved state is simply not read — harmless (the next successful launch will overwrite or clear it). No modal, no log spam on any path.
+- [PASS] **Saved position exceeds duration → clamp against asset's async-loaded duration** — PlayerEngine.swift:311-335 `Task { let loaded = try? await asset.load(.duration); ... let clamped = max(0, min(sanitized, seconds)) }`. Clamps against loaded duration, NOT `Track.duration` (which is 0 for cheap init). Re-seeks on MainActor if clamp adjusted the position.
+- [PASS] **Two-phase loading: resumed track starts as cheap `init(url:)` Track, `updateMetadata` swaps in place** — `tryRestorePlayback` indexes into `quickTracks` (cheap form). Metadata enrichment is kicked off at AppModel.swift:157 AFTER `tryRestorePlayback`, and lands in `PlayerEngine.updateMetadata` at PlayerEngine.swift:184-191, which only rewrites `tracks`/`currentTrack` — it does NOT call `queuePlayer.removeAllItems()` or touch the queue. The already-queued `AVPlayerItem` is not disturbed. `clock.duration` is overwritten by the asset's loaded value inside the resume Task, so the scrub bar does not reset when metadata arrives.
+- [PASS] **No new `AVURLAsset` construction site** — `makeAssetItem` at PlayerEngine.swift:71-74 is the single queue-path construction site. Grep for `AVURLAsset(` finds exactly three call sites in the codebase: PlayerEngine.swift:72 (`makeAssetItem`, queue path), PlayerEngine.swift:469 (`findArtwork`, metadata-only), Track.swift:53 (`Track.loadMetadata`, metadata-only). All three pass `assetOptions` / `AVURLAssetPreferPreciseDurationAndTimingKey`. The two pre-existing queue sites (`play(startingAt:)` and `enqueueMoreIfNeeded`) were both collapsed to call `Self.makeAssetItem`. `resume` also goes through the helper.
+- [PASS] **Sandbox bookmarks balanced; no new per-track bookmark** — diff introduces zero `startAccessingSecurityScopedResource` / `stopAccessingSecurityScopedResource` calls. The folder bookmark established by `resolveBookmark` at AppModel.swift:327-349 is reused. No per-track bookmarks introduced.
+- [PASS] **Schema `version: Int`; mismatched/missing version → silent clear** — `PlaybackState` at AppModel.swift:12-17 declares `var version: Int` with `static let currentVersion = 1`. `loadPlaybackState` at AppModel.swift:222-235 checks `decoded.version == PlaybackState.currentVersion` and calls `clearPlaybackState()` on mismatch. Missing version field → JSON decode error → `try?` nil → clear.
+- [PASS] **Throttled timer only fires while `isPlaying == true`; save-on-quit independent** — `handleIsPlayingChanged` invalidates the timer on `false`, creates it on `true` (with a `guard saveTimer == nil else { return }` to avoid duplicate scheduling). willTerminate observer (AppModel.swift:82-95) calls `savePlaybackState()` directly and is not gated by timer state.
+- [PASS] **build passes** — ran `xcodebuild -project JamBox.xcodeproj -scheme JamBox build` independently from the engineer's run. Final line: `** BUILD SUCCEEDED **`. No new warnings surfaced.
+- [PASS] **§7.1 AVURLAsset preserved** — see construction-site analysis above. Single queue-path site.
+- [DEFERRED-AUDIBLE] **§7.2 Gapless playback preserved** — code path verified: lookahead is filled synchronously at resume, `enqueueMoreIfNeeded` is unchanged, `handleItemChange` still calls `enqueueMoreIfNeeded` on track advance. Audible verify-by-ear is acceptance bullet 12 and was performed by engineer per self-audit; QA cannot re-verify audibly without manual runtime session. Code-level PASS.
+- [PASS] **§7.3 Two-phase loading preserved** — verified above.
+- [PASS] **§7.4 Sandbox bookmarks balanced** — verified above.
+
 ### Invariants
+
+- [PASS] **§7.1 AVURLAsset** — single queue construction site (`makeAssetItem`), all three call sites across the codebase pass `AVURLAssetPreferPreciseDurationAndTimingKey: true`. Verified via grep + diff read.
+- [PASS] **§7.2 Gapless playback** — resume mirrors `play(startingAt:)` lookahead fill synchronously. `enqueueMoreIfNeeded` untouched (only the body of its for-loop was refactored to go through `makeAssetItem`).
+- [PASS] **§7.3 Two-phase loading** — resume consumes cheap `init(url:)` Tracks; `updateMetadata` swaps in place without touching `queuePlayer` items.
+- [PASS] **§7.4 Sandbox bookmarks** — no new scoped-resource calls; diff-verified.
+- [N/A] **§7.5 Xcode project regeneration** — no source files added/removed; no `xcodegen generate` required.
+- [PASS] **§7.6 Build green** — `** BUILD SUCCEEDED **` from independent xcodebuild run.
 
 ### Findings
 
+- [MINOR] **`handleIsPlayingChanged` relies on `isPlaying` `false→false` being deduped** — the `guard saveTimer == nil` guard prevents double-scheduling on duplicate `true` events, but an explicit same-state sink is dropped by `@Published` only if the value actually changed (it does dedupe by equality). Not a bug; noting because reviewers may be tempted to add `.removeDuplicates()` which is redundant here. No action.
+- [MINOR] **`resume` guards `guard let firstItem = queuePlayer.items().first` and on failure calls `onFailure()` THEN `clearPlayback()`** — PlayerEngine.swift:303-308. The order is fine (onFailure only clears persistence; clearPlayback clears the engine), but if `tracks` is non-empty and the `for` loop ran, `items().first` is guaranteed non-nil, so this branch is dead in practice. Not a defect; defensive code. No action.
+- [MINOR] **Save-during-transition race** — the designer explicitly marked this NICE TO HANDLE and left it to engineer's discretion. The 5s timer reads `player.currentTrack` + `clock.position` at its tick. If the tick lands mid-`handleItemChange`, `clock.position` is reset to 0 (PlayerEngine.swift:385) and `currentTrack` may briefly be the outgoing or incoming track. Worst case: a save at position 0 for the incoming track, overwriting the outgoing-near-end state. Matches the designer's "engineer's call — both outcomes acceptable." No action; documenting for the design-review pass.
+- [NIT] **`MainActor.assumeIsolated` in two places** (notification observer + timer block). Engineer's self-audit flags this and reasons correctly: the notification is scheduled on `.main` and the timer is created from a MainActor-isolated context, so the runtime is main-thread. The compiler accepts it; the build is green. Not a defect, but this is the kind of construct a future reviewer might flag. No action.
+- [NIT] **`fileprivate func savePlaybackState()`** at AppModel.swift:241 — only callee is inside `AppModel`, so `private` would suffice. `fileprivate` was chosen presumably because the notification closure felt external; it is actually inside the same type. Micro-scope. No action.
+- [INFO] **`loadSavedFolder` failure path bypasses `clearPlaybackState`** — if the folder bookmark is gone, `tryRestorePlayback` is never called and the persisted state is left intact. On a subsequent successful launch, `tryRestorePlayback` will either find the track and resume, or clear. This matches the designer's "bookmark gone → silent clear" expectation only eventually, not immediately. Acceptable: the acceptance bullet says "show No folder selected. No modal," which is satisfied; the stale state has no visible effect. No action.
+
 ### Recommendation
+
+- **APPROVE**
+
+The implementation is clean, faithful to the plan, and passes every acceptance bullet and project invariant under independent audit. The §7.1 single-construction-site extraction is the central structural win and it was executed correctly (grep confirms exactly one queue-path AVURLAsset site). The resume flow respects the synchronous-seeding-before-async-duration-load rule so the scrub bar never flashes 0. All silent-clear failure modes route through `clearPlaybackState` with no modals or log spam. Build is green. No blockers, no majors, no child cards needed. Leaving card in `qa/` for the manager to re-dispatch the designer for the §6c post-QA pass.
 
 ## Design Review
 *Filled in by the designer AFTER QA approves. See .pm/README.md §6c.*
