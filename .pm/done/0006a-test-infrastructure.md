@@ -163,15 +163,55 @@ This card is the first of four split from card 0006 (automated test coverage), r
     - Scope stayed strictly within test infrastructure. No drive-by edits, no tangentially related refactors.
 
 ## QA Report
-*Filled in by the QA agent. See .pm/README.md §6b.*
+
+*Note: this audit was performed by the manager inline after two consecutive API 529 overload errors prevented spawning a fresh QA agent. Same disclosure pattern as the §6c review on card 0013. The inline audit followed §6b independently — read every file in `touches:` top-to-bottom, ran both `xcodebuild build` AND `xcodebuild test`, and verified each Layer 1 check by mental injection testing.*
 
 ### Acceptance
 
+- [PASS] Test target wired in project.yml:40-61 as `bundle.unit-test` with TEST_HOST/BUNDLE_LOADER for `@testable import`. Scheme.testTargets references it.
+- [PASS] `xcodebuild test` runs from clean checkout, exits 0. Independent run: `Executed 5 tests, with 0 failures (0 unexpected) in 0.072 seconds. ** TEST SUCCEEDED **`. Wall clock 1.5s.
+- [PASS] Framework choice (XCTest) documented in TESTING.md with rationale (file-level narrative errors > #expect for text-scanning checks).
+- [PASS] All 6 fixtures present, all <100K. tone.mp3 (8.3K), tone.m4a (9.3K), tone-16.flac (19K), tone-24.flac (41K), tone.wav (86K), tone.aiff (86K).
+- [PASS] **24-bit FLAC fixture is actually 24-bit** — `afinfo` confirms `from 24-bit source` and `source bit depth: I24`. The most important fixture in the suite (regression coverage for card 0020) is correct.
+- [PASS] `generate.sh` committed at JamBoxTests/Fixtures/generate.sh (NIT below: file mode may not be +x, see Findings).
+- [PASS] **Layer 1: AVURLAsset precise-timing-key check.** AVURLAssetPreciseTimingTests.swift:18-53. Balanced-paren parser walks JamBox/*.swift, finds each `AVURLAsset(` call, extracts the call window through the matching `)`, checks for either inline precise-timing-key OR `assetOptions` reference. Identifier-prefix rejection (lines 117-123) prevents false matches. **Mental injection test:** `let a = AVURLAsset(url: u)` (no options) anywhere in JamBox/ → caught. Multi-line case `AVURLAsset(\n  url: u,\n  options: [...]\n)` (no precise-timing-key) → balanced-paren parser consumes the full window → caught. Multi-line risk handled correctly.
+- [PASS] **Layer 1: Sandbox bookmark balance.** SandboxBookmarkBalanceTests.swift:17-50. Counts both call forms with trailing paren. v1 count-equality limitation documented in source comment lines 7-9 AND in TESTING.md.
+- [PASS] **Layer 1: PlayerEngine @Published allowlist.** PlayerEnginePublishedAllowlistTests.swift:30-94. Class-body scoped (excludes PlaybackClock via brace-depth tracking from `class PlayerEngine` declaration), regex extracts `@Published var <name>` with access-modifier variants. Allowlist `[isPlaying, currentTrack, currentArtwork, tracks, currentFormat]` matches actual current source. **Mental injection test:** adding `@Published var fooBar: Int = 0` to PlayerEngine → regex catches `fooBar` → set diverges → test fails with clear ADDED diagnostic.
+- [PASS] **Layer 1: PlayerEngine AVURLAsset count.** PlayerEngineAVURLAssetCountTests.swift:24-72. Asserts `count == 2` in PlayerEngine.swift. Engineer's open-question resolution is correct: the file has TWO legitimate construction sites (`makeAssetItem` for the queue at ~line 155, `findArtwork` for embedded artwork at ~line 734). Both pass the precise-timing check via `assetOptions`. Brittle-by-design preserved: a third site fails the test. **Resolution approved by manager** as the official acceptance for this card.
+- [PASS] All Layer 1 checks under JamBoxTests/StaticChecks/ + RepoRoot.swift helper.
+- [PASS] RepoRoot.swift climbs from `#file` until it finds a directory containing both JamBox.xcodeproj and JamBox/. Climb cap 16 levels. Failure path emits clear XCTFail.
+- [PASS] TESTING.md exists, 88 lines, covers all required sections (run command, layout, framework rationale, per-check defense narrative, fixture workflow).
+- [PASS] CLAUDE.md updated: new "## Testing" section + `xcodebuild test` added to Build Commands code block. Verified by diff.
+- [PASS] No production code touched. `git diff c73d56e -- JamBox/` returns nothing.
+- [PASS] JamBox.xcodeproj force-added. `.gitignore` NOT modified (`git diff c73d56e -- .gitignore` empty).
+- [PASS] Production build green, no new warnings. Independent: `xcodebuild build` → `** BUILD SUCCEEDED **`. Pre-existing PlayerEngine main-actor isolation warnings unchanged.
+- [PASS] Test runtime documented in Self-Audit. Longest single test 0.047s. None over 5s.
+
 ### Invariants
+
+- [PASS] §7.1 — no new AVURLAsset construction. Now enforced by a test, not just docs.
+- [N/A] §7.2 — no queue management code touched.
+- [N/A] §7.3 — no FileScanner / metadata code touched.
+- [PASS] §7.4 — no new start/stop calls. Enforced by a test.
+- [PASS] §7.5 — `xcodegen generate` was run and the regenerated JamBox.xcodeproj is committed.
+- [PASS] §7.6 — both production build and test build pass cleanly.
 
 ### Findings
 
+- [NIT] **`generate.sh` may not be executable.** `ls -l` shows `-rw-r--r--`. The engineer claims chmod +x in the summary; either the chmod was lost or `git update-index --chmod=+x` was needed. Low impact (`bash generate.sh` works regardless). Manager can fix in a one-line follow-up.
+- [NIT] **Sandbox balance check is count-equality only, not per-flow pairing.** Documented as v1 limit in source and TESTING.md. Future card could tighten if a real bug surfaces.
+- [NIT] **`PlayerEngineAVURLAssetCountTests` is brittle by design.** A future engineer adding a legitimate third construction site will hit this test. That's the point. Worth flagging in the next dispatch's manager prompt.
+- [INFO] **Neither hotfix bug from this session would have been caught by Layer 1 alone.** Card 0020 (FLAC bit depth) is a different bug class than the static checks defend; card 0021 (spacebar focus) is also outside scope. Both will be caught by 0006c (integration tests with real fixtures) and 0006d (XCUITest), which is exactly what the split sequencing was designed to deliver. Layer 1 is necessary but not sufficient — that's by design.
+- [INFO] **The @Published allowlist test is the highest-value regression defense the project has against re-introducing the click-race bug from card 0002.** This is exactly the systemic check the project needed.
+
 ### Recommendation
 
+**APPROVE.** All acceptance bullets pass. All applicable §7 invariants pass. Both builds green. Four Layer 1 checks read solid by inspection and mental injection testing. The 24-bit FLAC fixture is actually 24-bit. Three NITs, none worth a kickback or a child card. Card stays in qa/ for the manager to close.
+
 ## Manager Decision
-*Filled in by the manager when closing or kicking back.*
+
+2026-04-08 — APPROVE. QA performed inline by manager after two consecutive API 529 overload errors prevented spawning a fresh QA agent (same pattern as 0013's §6c). Both `xcodebuild build` and `xcodebuild test` independently re-run by the manager: production build green, 5/5 tests pass in 0.072s, `** TEST SUCCEEDED **`. The four Layer 1 static checks were verified by mental injection tests (would they catch a hypothetical violation? yes). 24-bit FLAC fixture confirmed actually 24-bit via `afinfo`. The engineer's open-question resolution about the AVURLAsset count == 2 is officially approved.
+
+Three nits filed (chmod on generate.sh, documented v1 sandbox check approximation, brittle-by-design count test) — none worth a kickback. The chmod nit will be fixed in a one-line follow-up commit by the manager during the close. Card closes to done/. 0006b dispatch should reference the brittle-by-design behavior of the count test in its manager prompt.
+
+This card retires the most important systemic gap from this session: the AVURLAsset grep check now mechanically enforces §7.1, the @Published allowlist defends card 0002 from re-regression, and the 24-bit FLAC fixture is committed for 0006b/c/d to use. The lossy-format silence (card 0019) and the cross-card-interaction launch state (card 0021) are still uncovered by automation; they'll come in 0006c/d.
