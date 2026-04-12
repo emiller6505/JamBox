@@ -93,21 +93,51 @@ fi
 # Layout:
 #   <volume>/READ ME FIRST.txt    (first-launch instructions)
 #   <volume>/JamBox.app
-#   <volume>/Applications -> /Applications  (drag target)
+#   <volume>/Applications -> /Applications  (drag target, with custom icon)
 echo "==> Staging DMG contents"
 mkdir -p "$STAGING"
 cp -R "$APP_PATH" "$STAGING/"
-ln -s /Applications "$STAGING/Applications"
 cp "scripts/dmg_readme.txt" "$STAGING/READ ME FIRST.txt"
+# NOTE: no Applications symlink here — we create a Finder alias on the
+# mounted volume below so the icon renders correctly.
 
-# --- build the DMG ------------------------------------------------------------
-echo "==> Creating $DMG_PATH"
+# --- build the DMG (two-phase: writable -> add alias -> compressed) -----------
+# A plain symlink to /Applications renders with a blank icon in the DMG.
+# Fix: create the DMG writable, mount it, use osascript to create a real
+# Finder alias (which carries the target's icon natively), then convert
+# to compressed UDZO.
+RW_DMG="$BUILD_DIR/${APP_NAME}-rw.dmg"
+echo "==> Creating writable DMG"
 hdiutil create \
   -volname "$APP_NAME" \
   -srcfolder "$STAGING" \
   -ov \
-  -format UDZO \
-  "$DMG_PATH" >/dev/null
+  -format UDRW \
+  "$RW_DMG" >/dev/null
+
+echo "==> Adding Applications alias with icon"
+MOUNT_DIR=$(hdiutil attach "$RW_DMG" -nobrowse -readwrite | tail -1 | awk -F'\t' '{print $NF}')
+swift -e '
+import AppKit
+let src = URL(fileURLWithPath: "/Applications")
+let dst = URL(fileURLWithPath: CommandLine.arguments[1] + "/Applications")
+let bookmark = try src.bookmarkData(
+    options: .suitableForBookmarkFile,
+    includingResourceValuesForKeys: nil,
+    relativeTo: nil)
+try URL.writeBookmarkData(bookmark, to: dst)
+// Set the icon from the bundled .icns
+if CommandLine.arguments.count > 2 {
+    if let icon = NSImage(contentsOfFile: CommandLine.arguments[2]) {
+        NSWorkspace.shared.setIcon(icon, forFile: dst.path, options: [])
+    }
+}
+' "$MOUNT_DIR" "$REPO_ROOT/scripts/applications_folder.icns"
+hdiutil detach "$MOUNT_DIR" >/dev/null
+
+echo "==> Compressing to $DMG_PATH"
+hdiutil convert "$RW_DMG" -format UDZO -o "$DMG_PATH" -ov >/dev/null
+rm -f "$RW_DMG"
 
 DMG_SIZE=$(du -h "$DMG_PATH" | awk '{print $1}')
 echo "==> DMG ready: $DMG_PATH ($DMG_SIZE)"
