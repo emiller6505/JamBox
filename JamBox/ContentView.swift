@@ -153,9 +153,20 @@ struct ContentView: View {
                 HStack(spacing: 6) {
                     Spacer()
                     Image(systemName: "magnifyingglass")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(themeManager.current.secondaryText ?? .secondary)
                     TextField("Search", text: $searchQuery)
-                        .textFieldStyle(.roundedBorder)
+                        .textFieldStyle(.plain)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(themeManager.current.searchFieldBackground)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .strokeBorder(themeManager.current.searchFieldBorder, lineWidth: 1)
+                        )
+                        .foregroundStyle(themeManager.current.primaryText)
                         .frame(width: 200)
                         .focused($searchFieldFocused)
                         .onExitCommand {

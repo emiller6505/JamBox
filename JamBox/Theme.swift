@@ -99,6 +99,24 @@ enum Theme: String, CaseIterable, Identifiable {
         }
     }
 
+    /// Search field background fill.
+    var searchFieldBackground: Color {
+        switch self {
+        case .light: return Color(nsColor: .textBackgroundColor)
+        case .dark: return Color(nsColor: .textBackgroundColor)
+        case .candy: return Color.white.opacity(0.15)
+        }
+    }
+
+    /// Search field border stroke.
+    var searchFieldBorder: Color {
+        switch self {
+        case .light: return Color(nsColor: .separatorColor)
+        case .dark: return Color(nsColor: .separatorColor)
+        case .candy: return Color.white.opacity(0.3)
+        }
+    }
+
     /// Whether the window's titlebar should be transparent so the background
     /// view shows through to the top edge.
     var transparentTitleBar: Bool {
