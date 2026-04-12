@@ -97,6 +97,12 @@ final class PlayerEngine: ObservableObject {
     @Published var currentArtwork: NSImage?
     @Published var tracks: [Track] = []
 
+    /// Volume level: 0.0 (silent) to 1.5 (150% boost). Default is 1.0.
+    /// Applied to every `AVPlayerItem` via `AVAudioMix` so values above
+    /// 1.0 actually amplify the signal (unlike `AVPlayer.volume` which
+    /// clamps at 1.0). Persisted to UserDefaults across launches.
+    @Published var volume: Float = 1.0
+
     /// Audio format of the currently-playing track (codec + sample rate +
     /// bit depth). `nil` when nothing is playing OR when any field cannot
     /// be determined — the badge in `NowPlayingBar` is hidden in both cases.
@@ -163,7 +169,13 @@ final class PlayerEngine: ObservableObject {
         return AVPlayerItem(asset: asset)
     }
 
+    private static let volumeDefaultsKey = "jambox.volume"
+
     init() {
+        // Restore persisted volume (default 1.0 if never saved).
+        let saved = UserDefaults.standard.float(forKey: Self.volumeDefaultsKey)
+        if saved > 0 { volume = min(max(saved, 0), 1.5) }
+
         queuePlayer.publisher(for: \.timeControlStatus)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] status in
@@ -337,6 +349,7 @@ final class PlayerEngine: ObservableObject {
         clock.position = 0
         clock.duration = tracks[index].duration
         loadArtwork(for: tracks[index])
+        for item in queuePlayer.items() { applyVolumeMix(to: item) }
         queuePlayer.play()
     }
 
@@ -382,6 +395,7 @@ final class PlayerEngine: ObservableObject {
         // real value once AVFoundation has parsed the container.
         clock.duration = tracks[index].duration
         loadArtwork(for: tracks[index])
+        for item in queuePlayer.items() { applyVolumeMix(to: item) }
 
         // Seek to the seeded position immediately so currentTime() reflects
         // it even though we're paused. Fire-and-forget; if it fails the user
@@ -463,6 +477,17 @@ final class PlayerEngine: ObservableObject {
         }
     }
 
+    /// Update the playback volume (0.0–1.5). Persists to UserDefaults and
+    /// re-applies the `AVAudioMix` to every item currently in the queue.
+    func setVolume(_ newVolume: Float) {
+        let clamped = min(max(newVolume, 0), 1.5)
+        volume = clamped
+        UserDefaults.standard.set(clamped, forKey: Self.volumeDefaultsKey)
+        for item in queuePlayer.items() {
+            applyVolumeMix(to: item)
+        }
+    }
+
     func seek(to fraction: Double) {
         let clamped = min(max(fraction, 0), 1)
         let target = clamped * clock.duration
@@ -502,6 +527,34 @@ final class PlayerEngine: ObservableObject {
         }
     }
 
+    /// Apply an `AVAudioMix` to `item` that sets its volume to `self.volume`.
+    /// Values above 1.0 amplify the signal — this is how the 100%–150%
+    /// boost works. The audio track is loaded asynchronously; a stale-item
+    /// guard prevents applying to an item that's already been removed from
+    /// the queue by the time the load completes.
+    private func applyVolumeMix(to item: AVPlayerItem) {
+        let vol = volume
+        // Optimization: skip the async load if volume is exactly 1.0
+        // (the default) — no mix needed.
+        guard abs(vol - 1.0) > 0.001 else {
+            item.audioMix = nil
+            return
+        }
+        Task {
+            guard let tracks = try? await item.asset.loadTracks(withMediaType: .audio),
+                  let audioTrack = tracks.first else { return }
+            let params = AVMutableAudioMixInputParameters(track: audioTrack)
+            params.setVolume(vol, at: .zero)
+            let mix = AVMutableAudioMix()
+            mix.inputParameters = [params]
+            await MainActor.run {
+                // Only apply if the item is still in the queue.
+                guard self.queuePlayer.items().contains(item) else { return }
+                item.audioMix = mix
+            }
+        }
+    }
+
     private func enqueueMoreIfNeeded() {
         guard let index = currentIndex else { return }
 
@@ -510,7 +563,9 @@ final class PlayerEngine: ObservableObject {
         let desired = index + lookAhead
 
         for i in (lastEnqueued + 1)..<min(desired, tracks.count) {
-            queuePlayer.insert(Self.makeAssetItem(for: tracks[i].url), after: nil)
+            let item = Self.makeAssetItem(for: tracks[i].url)
+            queuePlayer.insert(item, after: nil)
+            applyVolumeMix(to: item)
         }
     }
 

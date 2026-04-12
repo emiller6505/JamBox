@@ -22,11 +22,12 @@ struct NowPlayingBar: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            // Row 1: artwork, metadata, transport controls
+            // Row 1: artwork, metadata, transport controls, volume
             HStack(spacing: 12) {
                 artworkCell
                 metadataCell
                 transportCell
+                volumeCell
             }
 
             // Row 2: scrub bar — timestamps sit naturally adjacent to the slider
@@ -145,6 +146,13 @@ struct NowPlayingBar: View {
             }
         }
         .buttonStyle(.plain)
+    }
+
+    private var volumeCell: some View {
+        VolumeSlider(volume: Binding(
+            get: { player.volume },
+            set: { player.setVolume($0) }
+        ))
     }
 
     // MARK: - Bottom row (scrub) cells

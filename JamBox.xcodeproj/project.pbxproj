@@ -47,6 +47,7 @@
 		F81D0818488401B28D5F8899 /* FileScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B1EED3AF8BFD2D7FE2E6BCF /* FileScanner.swift */; };
 		F9337A846D2453E05ED05A3C /* tone-16.flac in Resources */ = {isa = PBXBuildFile; fileRef = 4F1660E2431E69822AD2B4BB /* tone-16.flac */; };
 		F97BF6718113CC6039F22217 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 852A94A7D8B3786C4C2E9123 /* AppModel.swift */; };
+		FDA075E3AC1AB8D9CFD6EC80 /* VolumeSlider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C3205D620D5E5465D8060FA /* VolumeSlider.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -77,6 +78,7 @@
 		5FFD55BB6B8D9E97D1B6F74E /* tone.aiff */ = {isa = PBXFileReference; lastKnownFileType = audio.aiff; path = tone.aiff; sourceTree = "<group>"; };
 		6248506DDBBB324C2A81CC98 /* Media.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Media.xcassets; sourceTree = "<group>"; };
 		6F00DA726FEFC57E6AB8C12F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		7C3205D620D5E5465D8060FA /* VolumeSlider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VolumeSlider.swift; sourceTree = "<group>"; };
 		817BCC0D3E34484A65BB1BAB /* JamBoxTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = JamBoxTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		84F09DE204AABDE1E162BEC5 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = SwiftUI.framework; sourceTree = "<group>"; };
 		852A94A7D8B3786C4C2E9123 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
@@ -202,6 +204,7 @@
 				1BFC85961416B3ADF2FF3C54 /* TableScroller.swift */,
 				F237EA5E68F1532D94847C52 /* Theme.swift */,
 				4B24BF6E8AC10977F7D1A95F /* Track.swift */,
+				7C3205D620D5E5465D8060FA /* VolumeSlider.swift */,
 				EEA38062895A55A7558E664A /* WindowAccessor.swift */,
 			);
 			path = JamBox;
@@ -370,6 +373,7 @@
 				D6841F41EB6E8197EA074C82 /* TableScroller.swift in Sources */,
 				BFB3C44302BD6BEB400F5734 /* Theme.swift in Sources */,
 				40742340B5901FB52EEBE2F6 /* Track.swift in Sources */,
+				FDA075E3AC1AB8D9CFD6EC80 /* VolumeSlider.swift in Sources */,
 				0D66C623B9AD62E73547777C /* WindowAccessor.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

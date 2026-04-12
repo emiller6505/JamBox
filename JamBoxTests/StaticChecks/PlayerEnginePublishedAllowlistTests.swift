@@ -25,6 +25,7 @@ final class PlayerEnginePublishedAllowlistTests: XCTestCase {
         "currentArtwork",
         "tracks",
         "currentFormat",
+        "volume",
     ]
 
     func testPlayerEnginePublishedPropertiesMatchAllowlist() throws {
